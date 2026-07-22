@@ -1,4 +1,8 @@
-const CACHE_NAME = 'money-hq-v1';
+// Bump this on every deploy. On activate, ALL caches whose name differs from
+// CACHE_NAME are deleted, so bumping it purges anything stale — including a
+// previously cached index.html. Do not reuse an old value.
+const CACHE_NAME = 'money-hq-v2';
+
 const APP_SHELL = [
   './',
   './index.html',
@@ -13,34 +17,35 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
+// Delete every cache that isn't the current one. This is what removes a stale
+// app shell, so CACHE_NAME must change whenever index.html changes.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((names) =>
-      Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
-    )
+    caches.keys()
+      .then((names) =>
+        Promise.all(names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n)))
+      )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// App shell: cache-first (works offline).
-// Everything else (Chart.js, PapaParse CDNs): network-first, falling back to cache.
+// Network-first for everything, falling back to cache when offline.
+//
+// The app shell is deliberately NOT cache-first: index.html carries app state
+// and must never be pinned to a stale copy that outlives a deploy. Offline use
+// still works via the cache fallback below.
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  const isAppShell = url.origin === self.location.origin;
+  if (event.request.method !== 'GET') return;
 
-  if (isAppShell){
-    event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request))
-    );
-  } else {
-    event.respondWith(
-      fetch(event.request)
-        .then((res) => {
+  event.respondWith(
+    fetch(event.request)
+      .then((res) => {
+        if (res && res.ok) {
           const resClone = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
-          return res;
-        })
-        .catch(() => caches.match(event.request))
-    );
-  }
+        }
+        return res;
+      })
+      .catch(() => caches.match(event.request))
+  );
 });
