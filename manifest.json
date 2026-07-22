@@ -1,0 +1,14 @@
+{
+  "name": "Money HQ",
+  "short_name": "Money HQ",
+  "description": "Paycheque buckets, spending dashboard, and account tracking",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F1E9D8",
+  "theme_color": "#221E17",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

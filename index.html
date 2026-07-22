@@ -1,0 +1,1854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Money HQ</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#221E17">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="storage-shim.js"></script>
+<style>
+  :root{
+    --bg:#F1E9D8; --panel:#FFFDF9; --panel-2:#F2E8D6; --line:#E4D6BC;
+    --label:#8C8171; --text:#221E17; --amber:#D9713A; --amber-dim:#F7E1C4;
+    --teal:#6B8F63; --teal-dim:#E4EBDF; --red:#C1553B; --purple:#B98089; --blue:#5C7A99;
+    --font-serif: Georgia, 'Times New Roman', serif;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);padding:32px 16px 60px;}
+  .wrap{max-width:980px;margin:0 auto;}
+  .wrap.narrow{max-width:660px;}
+  h1{font-family:var(--font-serif);font-size:42px;font-weight:400;letter-spacing:0;color:var(--text);margin:0 0 4px;}
+  .subtitle{color:var(--label);font-size:13px;margin:0 0 24px;font-family:var(--font-sans);}
+
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px;border-bottom:1px solid var(--line);padding-bottom:16px;}
+  .tab-btn{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 18px;font-size:13px;font-weight:500;color:var(--label);cursor:pointer;}
+  .tab-btn.active{background:var(--text);color:var(--panel);border-color:var(--text);}
+  .tab-btn:hover{border-color:var(--amber);}
+  .tab-btn.add-tab{border-style:dashed;color:var(--teal);border-color:var(--teal);}
+  .tab-btn.add-tab.active{background:var(--teal);color:#fff;border-color:var(--teal);}
+  .tab-btn.primary-tab{color:var(--blue);}
+  .tab-btn.primary-tab.active{background:var(--text);color:var(--panel);border-color:var(--text);}
+
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:24px;}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:0 1px 3px rgba(60,45,20,0.05);}
+  .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--label);margin-bottom:8px;}
+  .kpi-val{font-size:26px;font-weight:400;font-family:var(--font-serif);font-variant-numeric:tabular-nums;}
+  .kpi-sub{font-size:12px;color:var(--label);margin-top:4px;}
+
+  .kpi-hero{border-radius:16px;padding:24px 26px;box-shadow:0 1px 3px rgba(60,45,20,0.05);}
+  .kpi-hero-val{font-family:var(--font-serif);font-size:32px;font-weight:400;font-variant-numeric:tabular-nums;}
+  .kpi-hero-caption{font-size:13px;margin-top:10px;line-height:1.4;}
+  .kpi-hero.black{background:var(--text);color:var(--panel);}
+  .kpi-hero.black .kpi-hero-caption{color:#CFC8B9;}
+  .kpi-hero.orange{background:var(--amber);color:#fff;}
+  .kpi-hero.orange .kpi-hero-caption{color:#FBE6D5;}
+  .kpi-hero.peach{background:var(--amber-dim);color:var(--text);}
+  .kpi-hero.peach .kpi-hero-caption{color:var(--label);}
+  .kpi-hero.blue{background:var(--blue);color:#fff;}
+  .kpi-hero.blue .kpi-hero-caption{color:#DCE6ED;}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin-bottom:20px;box-shadow:0 1px 3px rgba(60,45,20,0.05);}
+  .card h2, .card-title{font-size:17px;font-weight:400;font-family:var(--font-serif);margin:0 0 16px;text-transform:none;letter-spacing:0;color:var(--text);}
+  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+  .card-header h2{margin:0;}
+  .card-note{font-size:12px;color:var(--label);margin:-10px 0 16px;line-height:1.55;}
+  .chip-row{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip-btn{background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:11px;font-weight:500;color:var(--label);cursor:pointer;}
+  .chip-btn:hover{border-color:var(--amber);color:var(--amber);}
+  .chip-btn.active{background:var(--text);color:var(--panel);border-color:var(--text);}
+
+  .chart-box{position:relative;height:260px;}
+  .chart-box.small{height:340px;}
+  .chart-box.large{height:460px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;}
+  th{text-align:left;padding:10px 8px;color:var(--label);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--line);background:var(--panel-2);}
+  th:first-child{border-radius:8px 0 0 0;}
+  th:last-child{border-radius:0 8px 0 0;}
+  td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  td.num, th.num{text-align:right;font-family:var(--font-sans);white-space:nowrap;}
+  tr.income td.num{color:var(--teal);}
+  tr.expense td.num{color:var(--text);}
+  tr.totals-row td{font-weight:600;border-top:2px solid var(--text);border-bottom:none;color:var(--amber);}
+  .cat-pill{display:inline-block;font-size:11px;padding:3px 10px;border-radius:999px;background:var(--panel-2);color:var(--label);border:1px solid var(--line);}
+  .txn-table-wrap{max-height:460px;overflow-y:auto;}
+  .cat-select{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;font-family:var(--font-sans);max-width:150px;}
+  .note-input{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;width:100%;min-width:100px;}
+  .note-input::placeholder{color:var(--label);}
+  .cat-select.pending-edit{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber);}
+  .volatility-pill{display:inline-block;margin-top:4px;font-size:10px;padding:2px 9px;border-radius:999px;background:var(--panel-2);color:var(--label);border:1px solid var(--line);}
+  .dev-pos{color:var(--teal);}
+  .dev-neg{color:var(--red);}
+  .balance-table td{vertical-align:top;padding:14px 18px;text-align:center;}
+  .balance-table th{text-align:center;padding:10px 18px;}
+  .balance-table tr:hover td{background:var(--panel-2);}
+  .history-table td, .history-table th{text-align:center;padding:11px 18px;}
+  .history-table tbody tr:last-of-type:not(.totals-row) td{background:var(--amber-dim);}
+
+  .drop-zone{border:2px dashed var(--line);border-radius:14px;padding:40px 20px;text-align:center;cursor:pointer;transition:.15s;background:var(--panel-2);}
+  .drop-zone:hover, .drop-zone.dragover{border-color:var(--teal);background:var(--teal-dim);}
+  .drop-zone .big-label{font-size:14px;font-weight:500;margin-bottom:6px;color:var(--text);}
+  .drop-zone .small-label{font-size:12px;color:var(--label);}
+  .preview-summary{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:16px 18px;background:var(--panel-2);border-radius:12px;font-size:13px;}
+  .preview-summary .stat{font-family:var(--font-serif);color:var(--amber);font-weight:400;font-size:15px;}
+  button.primary-btn{background:var(--teal);border:1px solid var(--teal);color:#fff;border-radius:999px;padding:10px 18px;font-size:13px;font-weight:500;cursor:pointer;}
+  button.primary-btn:hover{opacity:0.9;}
+  button.ghost-btn{background:var(--panel);border:1px solid var(--line);color:var(--label);border-radius:999px;padding:10px 18px;font-size:13px;cursor:pointer;}
+  .status-msg{font-size:12px;margin-top:10px;color:var(--teal);}
+
+  .indicator{width:9px;height:9px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px;}
+  .indicator.ok{background:var(--teal);}
+  .pay-input{display:flex;align-items:center;gap:10px;}
+  .pay-input span{font-family:var(--font-serif);font-size:22px;color:var(--label);}
+  .pay-input input{flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--text);font-family:var(--font-serif);font-size:22px;padding:10px 14px;font-weight:400;}
+  .pay-input input:focus{outline:none;border-color:var(--amber);}
+
+  .channel{border-top:1px solid var(--line);padding:16px 0;}
+  .channel:first-of-type{border-top:none;padding-top:4px;}
+  .ch-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .ch-name{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500;}
+  .ch-acct{font-family:var(--font-sans);font-size:10px;color:var(--purple);border:1px solid var(--line);border-radius:999px;padding:2px 8px;}
+  .ch-pct{font-family:var(--font-sans);font-size:13px;color:var(--amber);min-width:38px;text-align:right;}
+  .ch-amt{font-family:var(--font-serif);font-size:18px;font-weight:400;min-width:100px;text-align:right;}
+  input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:2px;background:var(--line);outline:none;transition:background .15s ease;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--amber);cursor:pointer;border:2px solid var(--panel);transition:transform .15s ease, box-shadow .15s ease;}
+  input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.15);}
+  input[type=range]:active::-webkit-slider-thumb{transform:scale(1.3);box-shadow:0 0 0 6px rgba(217,113,58,0.18);}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--amber);cursor:pointer;border:2px solid var(--panel);transition:transform .15s ease, box-shadow .15s ease;}
+  input[type=range]::-moz-range-thumb:hover{transform:scale(1.15);}
+  input[type=range]:active::-moz-range-thumb{transform:scale(1.3);box-shadow:0 0 0 6px rgba(217,113,58,0.18);}
+
+  .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:16px;background:var(--panel-2);}
+  .seg{height:100%;}
+
+  .total-row{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-family:var(--font-sans);font-size:12px;color:var(--label);}
+  .total-row .val{font-weight:600;}
+  .total-row .val.bad{color:var(--red);}
+  .total-row .val.good{color:var(--teal);}
+
+  .buffer-note{background:var(--teal-dim);border:1px solid var(--teal);border-radius:12px;padding:14px 18px;margin-top:16px;font-size:12px;line-height:1.55;color:#3F5A38;}
+
+  .btn-row{display:flex;gap:10px;margin-top:18px;}
+  button{background:var(--panel-2);border:1px solid var(--line);border-radius:999px;color:var(--text);font-family:var(--font-sans);font-size:13px;font-weight:500;padding:10px;cursor:pointer;}
+  .btn-row button{flex:1;}
+  button:hover{border-color:var(--amber);}
+  button.primary{background:var(--text);border-color:var(--text);color:var(--panel);}
+  button.primary:hover{opacity:0.88;}
+  button:active{transform:scale(0.98);}
+
+  .freq-btn{flex:1;}
+  .freq-btn.active{background:var(--text);border-color:var(--text);color:var(--panel);}
+  details summary::-webkit-details-marker{display:none;}
+  details[open] summary span:last-child{content:'collapse ▴';}
+
+  .empty{font-size:12px;color:var(--label);font-style:italic;padding:6px 0;}
+
+  .hero-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:16px;}
+  .hero-date{font-size:13px;color:var(--label);margin-bottom:4px;}
+  .hero-stat-label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--label);text-align:right;margin-bottom:4px;}
+  .hero-stat-val{font-family:var(--font-serif);font-size:36px;font-weight:400;text-align:right;}
+  .hero-stat-delta{font-size:13px;text-align:right;margin-top:2px;}
+
+  .flow-svg text{font-family:var(--font-sans);}
+  .flow-label-name{font-size:13px;font-weight:600;fill:var(--text);}
+  .flow-label-amt{font-size:12px;fill:var(--label);}
+
+  .section{display:none;}
+  .section.active{display:block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero-row">
+    <div>
+      <p class="hero-date" id="heroDate"></p>
+      <h1>Welcome back</h1>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div id="sections"></div>
+</div>
+
+<script>
+/* =========================================================
+   SHARED HELPERS
+   ========================================================= */
+function fmt(n){ const s = n<0 ? '-' : ''; return s + '$' + Math.round(Math.abs(n)).toLocaleString(); }
+function fmtCents(n){ return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+const MONTH_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function monthLabel(m){ const [y,mm] = m.split('-'); return MONTH_LONG[parseInt(mm,10)-1] + ' ' + y; }
+function monthShort(m){ const [y,mm] = m.split('-'); return MONTH_SHORT[parseInt(mm,10)-1]; }
+
+const tabsEl = document.getElementById('tabs');
+const sectionsEl = document.getElementById('sections');
+function showTab(id){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab===id));
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.dataset.section===id));
+}
+
+/* =========================================================
+   BUCKETS + HISTORY (paycheque splitting)
+   ========================================================= */
+// Neutral starter config. Real buckets, targets, and account names come from
+// your own backup file via Restore, or by editing these in the Buckets tab.
+const DEFAULTS = [
+  {key:'rent', name:'Rent', tag:'Chequing', pct:11.3, color:'#2E5C8A', target:0, hasTarget:true},
+  {key:'insurance', name:'Insurance', tag:'Chequing', pct:5.6, color:'#7F77DD', target:0, hasTarget:true},
+  {key:'subs', name:'Subscriptions', tag:'Chequing', pct:4.6, color:'#D4537E', target:0, hasTarget:true},
+  {key:'tfsa', name:'TFSA', tag:'Chequing', pct:11.3, color:'#5DCAA5', target:0, hasTarget:true},
+  {key:'groceries', name:'Groceries', tag:'Chequing', pct:7.9, color:'#EF9F27', target:0, hasTarget:true},
+  {key:'creditcard', name:'Credit card payment', tag:'Chequing', pct:9.0, color:'#D9534F', target:0, hasTarget:true},
+  {key:'save', name:'Save', tag:'Savings', pct:25.2, color:'#3FAE8C', target:0, hasTarget:false},
+  {key:'spend', name:'Spend', tag:'Chequing', pct:25.1, color:'#F2A93B', target:0, hasTarget:false}
+];
+const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, monthly: 12 };
+const FREQ_LABEL = { weekly: 'Standard weekly pay', biweekly: 'Standard biweekly pay', monthly: 'Standard monthly pay' };
+
+let channels = JSON.parse(JSON.stringify(DEFAULTS));
+let standardPay = 0;
+let frequency = 'weekly';
+let payHistory = [];
+
+const DEFAULT_ACCOUNTS = [
+  { id:'chequing', name:'Chequing', type:'Chequing' },
+  { id:'savings', name:'Savings', type:'Savings' }
+];
+let accounts = JSON.parse(JSON.stringify(DEFAULT_ACCOUNTS));
+
+async function loadAccounts(){
+  try{ const s = await window.storage.get('accounts-list'); if (s && s.value) accounts = JSON.parse(s.value); }catch(e){}
+}
+async function saveAccounts(){ try{ await window.storage.set('accounts-list', JSON.stringify(accounts)); }catch(e){} }
+
+let accountChangeLog = [];
+async function loadAccountChangeLog(){
+  try{ const s = await window.storage.get('account-change-log'); if (s && s.value) accountChangeLog = JSON.parse(s.value); }catch(e){}
+}
+async function logAccountChange(bucketName, oldTag, newTag){
+  if (oldTag === newTag) return;
+  accountChangeLog.unshift({ date: new Date().toLocaleDateString('en-CA'), bucket: bucketName, from: oldTag, to: newTag });
+  accountChangeLog = accountChangeLog.slice(0, 200);
+  try{ await window.storage.set('account-change-log', JSON.stringify(accountChangeLog)); }catch(e){}
+}
+
+function accountTxnStats(accountName){
+  let count = 0, minDate = null, maxDate = null;
+  MONTHS.forEach(m => {
+    (TXNS[m]||[]).forEach(t => {
+      if (getAccount(t) !== accountName) return;
+      count++;
+      if (!minDate || t.date < minDate) minDate = t.date;
+      if (!maxDate || t.date > maxDate) maxDate = t.date;
+    });
+  });
+  return { count, minDate, maxDate };
+}
+
+function setFrequency(f){
+  frequency = f;
+  document.querySelectorAll('.freq-btn').forEach(b => b.classList.toggle('active', b.dataset.freq === f));
+  const lbl = document.getElementById('stdPayLabel');
+  if (lbl) lbl.textContent = FREQ_LABEL[f];
+  updatePayNote();
+}
+function updatePayNote(){
+  const el = document.getElementById('payNote');
+  if (!el) return;
+  const freqWord = {weekly:'week', biweekly:'2 weeks', monthly:'month'}[frequency];
+  el.textContent = `Standard pay is ${fmtCents(standardPay)}/${freqWord}. Any extra is included here — it flows through the same percentages as everything else, so every bucket gets a little more instead of extra going to one place.`;
+}
+
+function renderTargetInputs(){
+  const el = document.getElementById('targetInputs');
+  if (!el) return;
+  const accountOptions = accounts.map(a=>a.name);
+  el.innerHTML = channels.map((c) => {
+    const idx = channels.indexOf(c);
+    const acctOpts = accountOptions.includes(c.tag)
+      ? accountOptions
+      : [c.tag, ...accountOptions];
+    const acctSelect = `<select class="cat-select acct-reassign" data-idx="${idx}" style="max-width:150px;">
+      ${acctOpts.map(name => `<option value="${name}" ${name===c.tag?'selected':''}>${name}</option>`).join('')}
+    </select>`;
+    if (c.hasTarget){
+      return `
+      <div class="channel">
+        <div class="ch-top"><div class="ch-name">${c.name} — real $/month</div>
+          <input class="ch-amt" data-idx="${idx}" type="number" step="5" value="${c.target}" style="width:100px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--amber);text-align:right;padding:6px 8px;">
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:6px;">${acctSelect}</div>
+      </div>`;
+    }
+    return `
+    <div class="channel">
+      <div class="ch-top"><div class="ch-name">${c.name} <span class="kpi-sub">(no fixed target)</span></div>${acctSelect}</div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('input[data-idx]').forEach(inp => inp.addEventListener('input', e => {
+    channels[parseInt(e.target.dataset.idx)].target = parseFloat(e.target.value) || 0;
+  }));
+  el.querySelectorAll('.acct-reassign').forEach(sel => sel.addEventListener('change', async e => {
+    const idx = parseInt(e.target.dataset.idx);
+    const oldTag = channels[idx].tag;
+    channels[idx].tag = e.target.value;
+    try{ await window.storage.set('pct-router-config', JSON.stringify(channels)); }catch(err){}
+    await logAccountChange(channels[idx].name, oldTag, e.target.value);
+    if (builtSections.has('history')) renderAccountChangeLog();
+    renderBuckets();
+  }));
+}
+
+function recalculate(){
+  standardPay = parseFloat(document.getElementById('setStdPay').value) || standardPay;
+  const periods = PERIODS_PER_YEAR[frequency];
+  const withTarget = channels.filter(c => c.hasTarget);
+  const withoutTarget = channels.filter(c => !c.hasTarget);
+  let usedPct = 0;
+  withTarget.forEach(c => {
+    const periodTarget = c.target * 12 / periods;
+    c.pct = Math.round((periodTarget / standardPay * 100) * 10) / 10;
+    usedPct += c.pct;
+  });
+  const remainingPct = Math.max(0, 100 - usedPct);
+  let assigned = 0;
+  withoutTarget.forEach((c, i) => {
+    if (i === withoutTarget.length - 1){
+      c.pct = Math.round((remainingPct - assigned) * 10) / 10;
+    } else {
+      c.pct = Math.round((remainingPct / withoutTarget.length) * 10) / 10;
+      assigned += c.pct;
+    }
+  });
+  updatePayNote();
+  renderBuckets();
+}
+
+const VOLATILITY = {
+  rent: 'Rarely changes', insurance: 'Rarely changes', tfsa: 'Rarely changes',
+  subs: 'Varies monthly', groceries: 'Varies monthly', creditcard: 'Varies monthly',
+  save: 'Fully flexible', spend: 'Fully flexible'
+};
+function volatilityFor(c){ return VOLATILITY[c.key] || (c.hasTarget ? 'Varies monthly' : 'Fully flexible'); }
+
+let cumulativeCache = null;
+let cumulativeCacheDirty = true;
+function computeBucketCumulative(){
+  if (!cumulativeCacheDirty && cumulativeCache) return cumulativeCache;
+  const totals = {};
+  let minDate=null, maxDate=null;
+  payHistory.forEach(h => {
+    if (!minDate || h.date < minDate) minDate = h.date;
+    if (!maxDate || h.date > maxDate) maxDate = h.date;
+    (h.channels||[]).forEach(c => { totals[c.name] = (totals[c.name]||0) + c.amt; });
+  });
+  let monthsElapsed = payHistory.length ? 1 : 0;
+  if (minDate && maxDate){
+    const days = (new Date(maxDate) - new Date(minDate))/86400000 + 1;
+    monthsElapsed = Math.max(days/30.44, 1);
+  }
+  cumulativeCache = { totals, monthsElapsed };
+  cumulativeCacheDirty = false;
+  return cumulativeCache;
+}
+
+function currentImbalance(){
+  return channels.reduce((s,c)=>s+c.pct,0) - 100;
+}
+
+function renderBalancePanel(){
+  const panelEl = document.getElementById('balancePanel');
+  if (!panelEl) return;
+  const imbalance = currentImbalance();
+  if (Math.abs(imbalance) < 0.05){
+    panelEl.style.display = 'none';
+    panelEl.innerHTML = '';
+    return;
+  }
+  panelEl.style.display = '';
+  const over = imbalance > 0;
+  const periods = PERIODS_PER_YEAR[frequency];
+  const { totals: cumTotals, monthsElapsed } = computeBucketCumulative();
+  const net = parseFloat(document.getElementById('payAmt').value) || 0;
+  const basis = net > 0 ? net : standardPay;
+
+  const rows = channels.map(c => {
+    const bucketTotal = cumTotals[c.name] || 0;
+    let targetPct=null, targetAmt=null, targetDisplayAmt=null, deviationPct=null, surplusVal, surplusLabel;
+    if (c.hasTarget){
+      targetAmt = c.target * 12 / periods;
+      targetPct = standardPay > 0 ? targetAmt/standardPay*100 : 0;
+      targetDisplayAmt = basis * targetPct/100;
+      deviationPct = c.pct - targetPct;
+      const expectedCum = c.target * monthsElapsed;
+      surplusVal = bucketTotal - expectedCum;
+      surplusLabel = (surplusVal>=0?'+':'') + fmtCents(surplusVal);
+    } else {
+      surplusVal = bucketTotal;
+      surplusLabel = fmtCents(bucketTotal) + ' cumulative';
+    }
+    return { key:c.key, name:c.name, volatility: volatilityFor(c), pct:c.pct, amt: basis*c.pct/100,
+      bucketTotal, hasTarget:c.hasTarget, targetPct, targetAmt, targetDisplayAmt, deviationPct, surplusVal, surplusLabel };
+  }).sort((a,b) => b.surplusVal - a.surplusVal);
+
+  const actionWord = over ? 'Remove from' : 'Add to';
+  const amtNeededPct = Math.abs(imbalance);
+  const amtNeededDollars = basis * amtNeededPct/100;
+
+  panelEl.innerHTML = `
+    <div class="buffer-note" style="background:#2E2416;border-color:#6B5527;color:#F2C98A;">
+      Total is ${(100+imbalance).toFixed(1)}% — ${over ? 'over' : 'under'} by ${amtNeededPct.toFixed(1)}% (${fmtCents(amtNeededDollars)}). Ranked by real surplus from your actual history, not just this cycle.
+    </div>
+    <div class="txn-table-wrap" style="margin-top:12px;">
+      <table class="balance-table">
+        <thead><tr>
+          <th>Bucket</th>
+          <th class="num">Bucket total</th>
+          <th>Current cycle split</th>
+          <th class="num">Surplus</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td><div>${r.name}</div><span class="volatility-pill">${r.volatility}</span></td>
+              <td class="num">${fmtCents(r.bucketTotal)}</td>
+              <td>${r.hasTarget
+                  ? `<div class="kpi-sub">Target: ${r.targetPct.toFixed(1)}% (${fmtCents(r.targetDisplayAmt)})</div><div>${r.pct.toFixed(1)}% (${fmtCents(r.amt)}) <span class="${r.deviationPct>=0?'dev-pos':'dev-neg'}">${r.deviationPct>=0?'+':''}${r.deviationPct.toFixed(1)}%</span></div>`
+                  : `<div class="kpi-sub">no fixed target</div><div>${r.pct.toFixed(1)}% (${fmtCents(r.amt)})</div>`}
+              </td>
+              <td class="num ${r.hasTarget ? (r.surplusVal>=0?'dev-pos':'dev-neg') : ''}">${r.surplusLabel}</td>
+              <td><button class="ghost-btn" data-key="${r.key}" style="padding:4px 10px;font-size:11px;">${actionWord}</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  panelEl.querySelectorAll('button[data-key]').forEach(btn => {
+    btn.addEventListener('click', () => applyBalanceAdjustment(btn.dataset.key));
+  });
+}
+
+function applyBalanceAdjustment(key){
+  const imbalance = currentImbalance();
+  const ch = channels.find(c=>c.key===key);
+  if (!ch) return;
+  ch.pct = Math.max(0, Math.round((ch.pct - imbalance) * 10) / 10);
+  updateBucketValues();
+}
+
+function buildChannelsDOM(){
+  const wrap = document.getElementById('channels');
+  if (!wrap) return;
+  const accountOptions = accounts.map(a=>a.name);
+  wrap.innerHTML = channels.map((ch, i) => {
+    const acctOpts = accountOptions.includes(ch.tag) ? accountOptions : [ch.tag, ...accountOptions];
+    return `
+    <div class="channel">
+      <div class="ch-top">
+        <div class="ch-name">${ch.name}
+          <select class="cat-select acct-reassign-row" data-idx="${i}" style="font-size:10px;padding:2px 8px;border-radius:999px;max-width:140px;">
+            ${acctOpts.map(name => `<option value="${name}" ${name===ch.tag?'selected':''}>${name}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span class="ch-pct" id="pct-${i}">${ch.pct.toFixed(1)}%</span>
+          <span style="display:flex;align-items:center;gap:2px;">
+            <span style="color:var(--label);font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;font-size:15px;">$</span>
+            <input type="number" class="ch-amt-input" id="amt-${i}" data-idx="${i}" step="0.01" min="0" style="width:90px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--text);font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;font-size:15px;font-weight:500;padding:4px 6px;text-align:right;">
+          </span>
+        </div>
+      </div>
+      <input type="range" min="0" max="100" step="0.1" value="${ch.pct}" data-idx="${i}">
+    </div>
+  `;
+  }).join('');
+
+  wrap.querySelectorAll('.acct-reassign-row').forEach(sel => {
+    sel.addEventListener('change', async e => {
+      const idx = parseInt(e.target.dataset.idx);
+      const oldTag = channels[idx].tag;
+      channels[idx].tag = e.target.value;
+      try{ await window.storage.set('pct-router-config', JSON.stringify(channels)); }catch(err){}
+      await logAccountChange(channels[idx].name, oldTag, e.target.value);
+      if (builtSections.has('history')) renderAccountChangeLog();
+      renderTargetInputs();
+    });
+  });
+
+  wrap.querySelectorAll('input[type=range]').forEach(slider => {
+    slider.addEventListener('input', e => {
+      const idx = parseInt(e.target.dataset.idx);
+      channels[idx].pct = parseFloat(e.target.value);
+      updateBucketValues();
+    });
+  });
+
+  wrap.querySelectorAll('.ch-amt-input').forEach(amtInput => {
+    amtInput.addEventListener('input', e => {
+      const idx = parseInt(e.target.dataset.idx);
+      const net = parseFloat(document.getElementById('payAmt').value) || 0;
+      const basis = net > 0 ? net : standardPay;
+      const dollarAmt = parseFloat(e.target.value) || 0;
+      channels[idx].pct = basis > 0 ? Math.round((dollarAmt/basis*100)*100)/100 : 0;
+      updateBucketValues();
+    });
+  });
+}
+
+function updateBucketValues(){
+  const net = parseFloat(document.getElementById('payAmt').value) || 0;
+  channels.forEach((ch, i) => {
+    const amt = net * ch.pct / 100;
+    const slider = document.querySelector('input[type=range][data-idx="'+i+'"]');
+    if (slider && document.activeElement !== slider) slider.value = ch.pct;
+    const pctEl = document.getElementById('pct-'+i);
+    const amtEl = document.getElementById('amt-'+i);
+    if (pctEl) pctEl.textContent = ch.pct.toFixed(1) + '%';
+    if (amtEl && document.activeElement !== amtEl) amtEl.value = amt.toFixed(2);
+  });
+
+  const total = channels.reduce((s,c)=>s+c.pct,0);
+  const totalAmt = channels.reduce((s,c)=>s + (net*c.pct/100), 0);
+  const balanced = Math.abs(total-100) < 0.05;
+
+  const totalEl = document.getElementById('totalPct');
+  if (totalEl){
+    totalEl.textContent = total.toFixed(1) + '%';
+    totalEl.className = 'val ' + (balanced ? 'good' : 'bad');
+  }
+  const totalAmtEl = document.getElementById('totalAmt');
+  if (totalAmtEl) totalAmtEl.textContent = fmtCents(totalAmt);
+
+  const dot = document.getElementById('statusDot');
+  if (dot) dot.className = 'indicator ' + (balanced ? 'ok' : '');
+  const statusText = document.getElementById('statusText');
+  if (statusText) statusText.textContent = balanced ? 'balanced' : (total>100 ? 'over 100%' : 'under 100%');
+
+  renderBalancePanel();
+  renderTransferSummary();
+}
+
+function renderTransferSummary(){
+  const el = document.getElementById('transferSummaryWrap');
+  if (!el) return;
+  const net = parseFloat(document.getElementById('payAmt').value) || 0;
+  const totals = {};
+  channels.forEach(c => { totals[c.tag] = (totals[c.tag]||0) + (net*c.pct/100); });
+  const rows = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
+
+  el.innerHTML = rows.map(([acct, amt]) => `
+    <div class="channel" style="padding:12px 0;">
+      <div class="ch-top" style="margin-bottom:0;">
+        <div class="ch-name">${acct}</div>
+        <span class="ch-amt">${fmtCents(amt)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderBuckets(){
+  buildChannelsDOM();
+  updateBucketValues();
+}
+
+async function loadBucketState(){
+  try{ const s = await window.storage.get('pct-router-config'); if(s && s.value) channels = JSON.parse(s.value); }catch(e){}
+  try{ const sp = await window.storage.get('pct-router-standardpay'); if(sp && sp.value) standardPay = parseFloat(sp.value); }catch(e){}
+  try{ const fr = await window.storage.get('pct-router-frequency'); if(fr && fr.value) frequency = fr.value; }catch(e){}
+  try{ const h = await window.storage.get('pct-router-history'); if(h && h.value) payHistory = JSON.parse(h.value); }catch(e){}
+  await migrateChannels();
+}
+
+async function migrateChannels(){
+  const existingKeys = new Set(channels.map(c=>c.key));
+  const missing = DEFAULTS.filter(d => !existingKeys.has(d.key));
+  if (!missing.length) return;
+
+  missing.forEach(def => channels.push(JSON.parse(JSON.stringify(def))));
+  const order = DEFAULTS.map(d=>d.key);
+  channels.sort((a,b) => order.indexOf(a.key) - order.indexOf(b.key));
+
+  const save = channels.find(c=>c.key==='save');
+  const spend = channels.find(c=>c.key==='spend');
+  missing.forEach(def => {
+    const newChannel = channels.find(c=>c.key===def.key);
+    if (!newChannel || !save || !spend) return;
+    const flexSum = save.pct + spend.pct;
+    const take = Math.min(def.pct, flexSum);
+    if (flexSum > 0){
+      const saveShare = save.pct/flexSum;
+      save.pct = Math.max(0, save.pct - take*saveShare);
+      spend.pct = Math.max(0, spend.pct - take*(1-saveShare));
+    }
+    newChannel.pct = take;
+  });
+
+  try{ await window.storage.set('pct-router-config', JSON.stringify(channels)); }catch(e){}
+}
+
+function buildBucketsSection(){
+  const sec = document.createElement('div');
+  sec.className = 'section';
+  sec.dataset.section = 'buckets';
+  sec.innerHTML = `
+    <div class="wrap narrow" style="padding:0;margin:0;max-width:100%;">
+      <details class="card" id="settingsDetails">
+        <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+          <span>Settings — change these when reality changes</span>
+          <span style="font-size:11px;color:var(--label);">expand ▾</span>
+        </summary>
+        <p class="card-note" style="margin-top:14px;">Update your pay frequency, standard pay, or any bucket's real monthly cost, then recalculate — the percentages below adjust automatically instead of you eyeballing sliders.</p>
+        <p class="card-note" style="margin:0 0 8px;">Pay frequency</p>
+        <div class="btn-row" id="freqRow" style="margin-bottom:16px;">
+          <button data-freq="weekly" class="freq-btn">Weekly</button>
+          <button data-freq="biweekly" class="freq-btn">Biweekly</button>
+          <button data-freq="monthly" class="freq-btn">Monthly</button>
+        </div>
+        <div class="channel" style="padding-top:0;">
+          <div class="ch-top"><div class="ch-name" id="stdPayLabel">Standard pay per period</div>
+            <input class="ch-amt" id="setStdPay" type="number" step="10" style="width:110px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--amber);text-align:right;padding:6px 8px;">
+          </div>
+        </div>
+        <div id="targetInputs"></div>
+        <div class="btn-row">
+          <button class="primary" id="recalcBtn">Recalculate percentages from targets</button>
+        </div>
+      </details>
+
+      <div class="card">
+        <p class="card-title">This pay period, net amount</p>
+        <div class="pay-input"><span>$</span><input type="number" id="payAmt" placeholder="1024.00" step="0.01" min="0"></div>
+        <p class="card-note" style="margin-top:10px;" id="payNote"></p>
+      </div>
+
+      <div class="card">
+        <p class="card-title">Buckets — percentage of every paycheque, standard or overtime</p>
+        <div id="channels"></div>
+        <div class="total-row"><span>allocated</span><span class="val" id="totalPct">0%</span></div>
+        <div class="total-row"><span>total amount</span><span class="val" id="totalAmt">$0.00</span></div>
+        <div id="balancePanel" style="display:none;"></div>
+        <div class="buffer-note">
+          Percentages are set slightly above your bare-minimum targets, so even a standard paycheque builds a small buffer in every bucket. Overtime builds buffer faster, automatically, in all of them at once.
+        </div>
+        <div class="btn-row">
+          <button class="primary" id="saveBtn">Save this split & log paycheque</button>
+          <button id="resetBtn">Reset to defaults</button>
+        </div>
+        <p class="status-msg" id="saveStatusMsg" style="color:var(--red);"></p>
+      </div>
+
+      <div class="card">
+        <p class="card-title">Transfer summary — by account</p>
+        <p class="card-note">One line per account, this paycheque — this is the actual number of transfers to make, instead of one per bucket.</p>
+        <div id="transferSummaryWrap"></div>
+      </div>
+    </div>
+  `;
+  sectionsEl.appendChild(sec);
+
+  document.querySelectorAll('.freq-btn').forEach(b => b.addEventListener('click', () => setFrequency(b.dataset.freq)));
+  document.getElementById('recalcBtn').addEventListener('click', recalculate);
+  document.getElementById('setStdPay').addEventListener('input', e => {
+    standardPay = parseFloat(e.target.value) || standardPay;
+    updatePayNote();
+  });
+  document.getElementById('payAmt').addEventListener('input', updateBucketValues);
+
+  document.getElementById('saveBtn').addEventListener('click', async () => {
+    const net = parseFloat(document.getElementById('payAmt').value) || 0;
+    const total = channels.reduce((s,c)=>s+c.pct,0);
+    const statusEl = document.getElementById('saveStatusMsg');
+    if (Math.abs(total-100) > 0.15){
+      if (statusEl) statusEl.textContent = `Buckets must sum to 100% before saving — currently at ${total.toFixed(1)}%.`;
+      return;
+    }
+    if (statusEl) statusEl.textContent = '';
+    try{
+      await window.storage.set('pct-router-config', JSON.stringify(channels));
+      await window.storage.set('pct-router-standardpay', String(standardPay));
+      await window.storage.set('pct-router-frequency', frequency);
+      if (net > 0){
+        const periods = PERIODS_PER_YEAR[frequency];
+        const entry = {
+          date: new Date().toLocaleDateString('en-CA'),
+          net,
+          channels: channels.map(c => {
+            let targetPct = null, targetAmt = null;
+            if (c.hasTarget){
+              targetAmt = c.target * 12 / periods;
+              targetPct = standardPay > 0 ? (targetAmt/standardPay*100) : null;
+            }
+            return {
+              name: c.name, tag: c.tag, hasTarget: c.hasTarget,
+              pct: c.pct, amt: Math.round(net*c.pct/100*100)/100,
+              targetPct, targetAmt
+            };
+          })
+        };
+        payHistory.unshift(entry);
+        payHistory = payHistory.slice(0, 200);
+        await window.storage.set('pct-router-history', JSON.stringify(payHistory));
+        cumulativeCacheDirty = true;
+        if (builtSections.has('history')) buildHistorySectionContent();
+        renderHero();
+      }
+    }catch(e){ console.error('Storage error', e); }
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    channels = JSON.parse(JSON.stringify(DEFAULTS));
+    standardPay = 1024;
+    setFrequency('weekly');
+    document.getElementById('setStdPay').value = standardPay;
+    renderTargetInputs();
+    renderBuckets();
+  });
+
+  setFrequency(frequency);
+  document.getElementById('setStdPay').value = standardPay;
+  renderTargetInputs();
+  renderBuckets();
+}
+
+function buildHistoryTabSection(){
+  const sec = document.createElement('div');
+  sec.className = 'section';
+  sec.dataset.section = 'history';
+  sec.innerHTML = `
+    <div class="card">
+      <p class="card-title">Affordability calculator</p>
+      <div class="btn-row" id="affordModeRow">
+        <button data-mode="recurring" class="freq-btn active">New recurring expense</button>
+        <button data-mode="onetime" class="freq-btn">One-time purchase</button>
+      </div>
+
+      <div id="affordRecurring">
+        <p class="card-note" style="margin-top:16px;">See how a new monthly cost would fit into your current buckets — this is a sandbox, nothing here touches your real saved buckets unless you say so.</p>
+        <div class="pay-input"><span>$</span><input type="number" id="affordRecurringAmt" placeholder="150.00" step="5" min="0"></div>
+        <div id="affordRecurringResult"></div>
+      </div>
+
+      <div id="affordOnetime" style="display:none;">
+        <p class="card-note" style="margin-top:16px;">See how long it'd take to save up for something, at your current Save rate.</p>
+        <div class="pay-input"><span>$</span><input type="number" id="affordOnetimeAmt" placeholder="1200.00" step="10" min="0"></div>
+        <div id="affordOnetimeResult"></div>
+      </div>
+    </div>
+
+    <div class="kpi-row" id="historyKpiRow"></div>
+    <div class="card">
+      <h2>History — every logged paycheque</h2>
+      <div id="historyTableWrap"></div>
+    </div>
+    <div class="card">
+      <h2>Transfers by account, per paycheque</h2>
+      <p class="card-note">The simplified version — one line per account, per paycheque, computed from your bucket breakdowns. This is what you'd actually go transfer, not the category-by-category detail.</p>
+      <div id="accountHistoryTableWrap"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h2>Target vs deviation, by bucket</h2>
+        <select class="cat-select" id="historyBucketPicker" style="max-width:220px;"></select>
+      </div>
+      <p class="card-note">Blue is your target, month by month. Red is how far above (positive) or below (negative) target you actually landed that month.</p>
+      <div id="historyChartsGrid"></div>
+    </div>
+    <details class="card" id="acctChangeLogDetails">
+      <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+        <span>Account change log</span>
+        <span style="font-size:11px;color:var(--label);">expand ▾</span>
+      </summary>
+      <div id="acctChangeLogWrap" style="margin-top:14px;"></div>
+    </details>
+  `;
+  sectionsEl.appendChild(sec);
+  wireAffordabilityCalculator();
+  buildHistorySectionContent();
+}
+
+function buildAccountsSection(){
+  const sec = document.createElement('div');
+  sec.className = 'section';
+  sec.dataset.section = 'accounts';
+  sec.innerHTML = `
+    <div class="card" style="border-color:var(--red);">
+      <h2>Backup your data</h2>
+      <p class="card-note">Given the storage instability today, download a full backup now. This file has everything — buckets, paycheque history, transactions, accounts, learned rules — and can be handed to the real desktop app version we're building.</p>
+      <div class="btn-row">
+        <button class="primary" id="exportBackupBtn">Download full backup (.json)</button>
+        <button class="ghost-btn" id="importBackupBtnTrigger">Restore from backup</button>
+        <input type="file" id="importBackupFile" accept=".json" style="display:none;">
+      </div>
+      <p class="status-msg" id="exportBackupMsg"></p>
+    </div>
+    <div class="card">
+      <h2>Your accounts</h2>
+      <p class="card-note">Every account you're tracking money through. Each one gets its own CSV upload below, and becomes a selectable option for any bucket in Settings — so if a bucket's account ever changes, update it here.</p>
+      <div id="accountsListWrap"></div>
+      <div class="btn-row" style="margin-top:16px;align-items:center;">
+        <input type="text" id="newAccountName" class="note-input" placeholder="Account name (e.g. Simplii Savings)" style="flex:2;">
+        <select id="newAccountType" class="cat-select" style="flex:1;">
+          <option>Chequing</option><option>Savings</option><option>Credit Card</option><option>Investment</option><option>Other</option>
+        </select>
+        <button class="primary" id="addAccountBtn" style="flex:0 0 auto;">+ Add account</button>
+      </div>
+      <p class="status-msg" id="addAccountMsg" style="color:var(--red);"></p>
+    </div>
+    <div id="accountUploadCards"></div>
+  `;
+  sectionsEl.appendChild(sec);
+
+  document.getElementById('exportBackupBtn').addEventListener('click', () => {
+    const msgEl = document.getElementById('exportBackupMsg');
+    try{
+      const backup = {
+        exportedAt: new Date().toISOString(),
+        channels, standardPay, frequency, payHistory,
+        overrides, learnedRules, accounts, accountChangeLog,
+        personalRules,
+        months: MONTHS, transactions: TXNS
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `money-hq-backup-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      if (msgEl) msgEl.textContent = 'Downloaded. Check your Downloads folder.';
+    }catch(e){
+      if (msgEl) msgEl.textContent = 'Export failed — try again in a moment.';
+      console.error(e);
+    }
+  });
+
+  document.getElementById('importBackupBtnTrigger').addEventListener('click', () => {
+    document.getElementById('importBackupFile').click();
+  });
+  document.getElementById('importBackupFile').addEventListener('change', async (e) => {
+    const msgEl = document.getElementById('exportBackupMsg');
+    const file = e.target.files[0];
+    if (!file) return;
+    try{
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      if (!backup || typeof backup !== 'object' || !backup.channels){
+        if (msgEl) msgEl.textContent = 'This doesn\'t look like a Money HQ backup file.';
+        return;
+      }
+      channels = backup.channels || channels;
+      standardPay = backup.standardPay || standardPay;
+      frequency = backup.frequency || frequency;
+      payHistory = backup.payHistory || payHistory;
+      overrides = backup.overrides || overrides;
+      learnedRules = backup.learnedRules || learnedRules;
+      accounts = backup.accounts || accounts;
+      accountChangeLog = backup.accountChangeLog || accountChangeLog;
+      personalRules = Object.assign({}, EMPTY_PERSONAL_RULES, backup.personalRules || {});
+      MONTHS = backup.months || MONTHS;
+      TXNS = backup.transactions || TXNS;
+
+      await window.storage.set('pct-router-config', JSON.stringify(channels));
+      await window.storage.set('pct-router-standardpay', String(standardPay));
+      await window.storage.set('pct-router-frequency', frequency);
+      await window.storage.set('pct-router-history', JSON.stringify(payHistory));
+      await window.storage.set('dashboard-overrides', JSON.stringify(overrides));
+      await window.storage.set('dashboard-learned-rules', JSON.stringify(learnedRules));
+      await window.storage.set('accounts-list', JSON.stringify(accounts));
+      await window.storage.set('account-change-log', JSON.stringify(accountChangeLog));
+      await savePersonalRules();
+      await window.storage.set('dashboard-uploaded-all', JSON.stringify(Object.values(TXNS).flat()));
+      await window.storage.set('dashboard-uploaded-txns', JSON.stringify(Object.values(TXNS).flat()));
+
+      cumulativeCacheDirty = true;
+      MONTHS.forEach(m => recomputeMonthCategoryNet(m));
+      if (msgEl) msgEl.textContent = 'Restored. Reloading dashboard...';
+      rebuildAll();
+    }catch(err){
+      if (msgEl) msgEl.textContent = 'Restore failed — check the file and try again.';
+      console.error(err);
+    }
+  });
+
+  document.getElementById('addAccountBtn').addEventListener('click', async () => {
+    const nameInput = document.getElementById('newAccountName');
+    const typeSelect = document.getElementById('newAccountType');
+    const msgEl = document.getElementById('addAccountMsg');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    if (accounts.some(a=>a.name.toLowerCase()===name.toLowerCase())){
+      if (msgEl) msgEl.textContent = `You already have an account named "${name}".`;
+      return;
+    }
+    if (msgEl) msgEl.textContent = '';
+    accounts.push({ id: 'acct-'+Date.now(), name, type: typeSelect.value });
+    await saveAccounts();
+    nameInput.value = '';
+    renderAccountsList();
+    renderAccountUploadCards();
+  });
+
+  renderAccountsList();
+  renderAccountUploadCards();
+}
+
+function renderAccountsList(){
+  const wrap = document.getElementById('accountsListWrap');
+  if (!wrap) return;
+  if (!accounts.length){ wrap.innerHTML = '<p class="empty">No accounts yet — add one below.</p>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr><th>Account</th><th>Type</th><th class="num">Transactions</th><th>Date range</th><th></th></tr></thead>
+      <tbody>
+        ${accounts.map(a => {
+          const stats = accountTxnStats(a.name);
+          return `<tr>
+            <td>${a.name}</td>
+            <td><span class="cat-pill">${a.type}</span></td>
+            <td class="num">${stats.count}</td>
+            <td class="kpi-sub">${stats.minDate ? stats.minDate+' → '+stats.maxDate : 'no transactions yet'}</td>
+            <td class="acct-action-cell" data-cell="${a.id}"><button class="ghost-btn acct-remove-btn" data-del="${a.id}" style="padding:5px 12px;font-size:11px;">Remove</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+  wrap.querySelectorAll('.acct-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const acc = accounts.find(a=>a.id===btn.dataset.del);
+      if (!acc) return;
+      const cell = wrap.querySelector(`.acct-action-cell[data-cell="${acc.id}"]`);
+      if (!cell) return;
+      cell.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+          <span style="font-size:11px;color:var(--red);">Remove ${acc.name}?</span>
+          <button class="ghost-btn acct-confirm-btn" style="padding:5px 12px;font-size:11px;border-color:var(--red);color:var(--red);">Yes, remove</button>
+          <button class="ghost-btn acct-cancel-btn" style="padding:5px 12px;font-size:11px;">Cancel</button>
+        </div>
+      `;
+      cell.querySelector('.acct-confirm-btn').addEventListener('click', async () => {
+        accounts = accounts.filter(x=>x.id!==acc.id);
+        await saveAccounts();
+        renderAccountsList();
+        renderAccountUploadCards();
+      });
+      cell.querySelector('.acct-cancel-btn').addEventListener('click', () => {
+        renderAccountsList();
+      });
+    });
+  });
+}
+
+function renderAccountUploadCards(){
+  const wrap = document.getElementById('accountUploadCards');
+  if (!wrap) return;
+  wrap.innerHTML = accounts.map(a => `
+    <details class="card" id="upload-${a.id}">
+      <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+        <span>Upload CSV — ${a.name}</span>
+        <span style="font-size:11px;color:var(--label);">expand ▾</span>
+      </summary>
+      <div style="margin-top:16px;">
+        <div class="drop-zone">
+          <div class="big-label">Drag a ${a.name} CSV export here, or click to browse</div>
+          <div class="small-label">Same format as before: date, description, debit, credit — no header row</div>
+          <input type="file" class="csv-file-input" accept=".csv" style="display:none;">
+        </div>
+        <div class="preview-area"></div>
+      </div>
+    </details>
+  `).join('');
+
+  accounts.forEach(a => {
+    const container = document.getElementById('upload-'+a.id);
+    if (container) wireCsvUpload(container, a.name);
+  });
+}
+
+const AFFORD_FREQ_WORD = { weekly: 'week', biweekly: 'pay period', monthly: 'month' };
+
+function wireAffordabilityCalculator(){
+  document.querySelectorAll('#affordModeRow .freq-btn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#affordModeRow .freq-btn').forEach(x => x.classList.toggle('active', x===b));
+      document.getElementById('affordRecurring').style.display = b.dataset.mode==='recurring' ? '' : 'none';
+      document.getElementById('affordOnetime').style.display = b.dataset.mode==='onetime' ? '' : 'none';
+    });
+  });
+  document.getElementById('affordRecurringAmt').addEventListener('input', renderAffordRecurring);
+  document.getElementById('affordOnetimeAmt').addEventListener('input', renderAffordOnetime);
+}
+
+function renderAffordRecurring(){
+  const el = document.getElementById('affordRecurringResult');
+  const amt = parseFloat(document.getElementById('affordRecurringAmt').value) || 0;
+  if (amt <= 0){ el.innerHTML = ''; return; }
+
+  const periods = PERIODS_PER_YEAR[frequency];
+  const periodTarget = amt * 12 / periods;
+  const newPct = periodTarget / standardPay * 100;
+
+  const save = channels.find(c=>c.key==='save');
+  const spend = channels.find(c=>c.key==='spend');
+  const flexPct = (save ? save.pct : 0) + (spend ? spend.pct : 0);
+  const remainingFlexPct = flexPct - newPct;
+  const freqWord = AFFORD_FREQ_WORD[frequency];
+
+  if (remainingFlexPct < 0){
+    const shortfallPct = Math.abs(remainingFlexPct);
+    const shortfallAmt = standardPay * shortfallPct / 100;
+    el.innerHTML = `
+      <div class="buffer-note" style="background:#2E1E1E;border-color:#6B2A26;color:#E8A29C;">
+        Doesn't fit without cutting a fixed bucket. This would need ${newPct.toFixed(1)}% of a standard paycheque (${fmtCents(periodTarget)}/${freqWord}), but Save + Spend together only have ${flexPct.toFixed(1)}%.
+        Short by ${fmtCents(shortfallAmt)}/${freqWord} — either trim a fixed bucket (Rent, Subscriptions, etc.) or this doesn't fit at your current pay.
+      </div>`;
+    return;
+  }
+
+  const ratio = flexPct > 0 ? (save.pct / flexPct) : 0.5;
+  const newSavePct = remainingFlexPct * ratio;
+  const newSpendPct = remainingFlexPct - newSavePct;
+  const oldSaveAmt = standardPay * save.pct/100;
+  const oldSpendAmt = standardPay * spend.pct/100;
+  const newSaveAmt = standardPay * newSavePct/100;
+  const newSpendAmt = standardPay * newSpendPct/100;
+
+  el.innerHTML = `
+    <div class="buffer-note">
+      Fits. This would take ${newPct.toFixed(1)}% (${fmtCents(periodTarget)}/${freqWord}) out of Save + Spend, split proportionally:
+    </div>
+    <table style="margin-top:10px;">
+      <thead><tr><th></th><th class="num">Now</th><th class="num">With this added</th></tr></thead>
+      <tbody>
+        <tr><td>Save</td><td class="num">${fmtCents(oldSaveAmt)}</td><td class="num">${fmtCents(newSaveAmt)}</td></tr>
+        <tr><td>Spend</td><td class="num">${fmtCents(oldSpendAmt)}</td><td class="num">${fmtCents(newSpendAmt)}</td></tr>
+      </tbody>
+    </table>
+    <p class="kpi-sub" style="margin-top:8px;">Annualized cost: ${fmtCents(amt*12)}/year. This is a preview only — your real buckets are unchanged.</p>
+  `;
+}
+
+function renderAffordOnetime(){
+  const el = document.getElementById('affordOnetimeResult');
+  const cost = parseFloat(document.getElementById('affordOnetimeAmt').value) || 0;
+  if (cost <= 0){ el.innerHTML = ''; return; }
+
+  const save = channels.find(c=>c.key==='save');
+  const savePerPeriod = standardPay * (save ? save.pct : 0) / 100;
+  const freqWord = AFFORD_FREQ_WORD[frequency];
+
+  if (savePerPeriod <= 0){
+    el.innerHTML = `<div class="buffer-note" style="background:#2E1E1E;border-color:#6B2A26;color:#E8A29C;">Save bucket is currently 0% — nothing to project against.</div>`;
+    return;
+  }
+
+  const periodsNeeded = Math.ceil(cost / savePerPeriod);
+  const weeksPerPeriod = { weekly:1, biweekly:2, monthly:4.33 }[frequency];
+  const weeksNeeded = Math.round(periodsNeeded * weeksPerPeriod);
+
+  const loggedSaveTotal = payHistory.reduce((sum,h) => {
+    const c = (h.channels||[]).find(x=>x.name==='Save');
+    return sum + (c ? c.amt : 0);
+  }, 0);
+  const pctOfLogged = loggedSaveTotal > 0 ? (cost/loggedSaveTotal*100) : null;
+
+  el.innerHTML = `
+    <div class="buffer-note">
+      At your current Save rate of ${fmtCents(savePerPeriod)}/${freqWord}, this would take <b>${periodsNeeded} pay period${periodsNeeded>1?'s':''}</b> (~${weeksNeeded} weeks) to save up from scratch.
+    </div>
+    ${loggedSaveTotal > 0 ? `<p class="kpi-sub" style="margin-top:8px;">You've logged ${fmtCents(loggedSaveTotal)} to Save across your paycheque history — this purchase would be ${pctOfLogged.toFixed(0)}% of that. (Based on logged paycheques only, not your actual bank balance.)</p>` : ''}
+  `;
+}
+
+
+function buildHistorySectionContent(){
+  const wrap = document.getElementById('historyTableWrap');
+  const kpiRow = document.getElementById('historyKpiRow');
+  if (!wrap || !kpiRow) return;
+
+  if (!payHistory.length){
+    kpiRow.innerHTML = '';
+    wrap.innerHTML = '<p class="empty">No paycheques logged yet — save a split in the Buckets tab to start building history.</p>';
+    return;
+  }
+
+  const currentNames = channels.map(c=>c.name);
+  const historicalNames = payHistory.flatMap(h => (h.channels||[]).map(c=>c.name));
+  const bucketNames = Array.from(new Set([...currentNames, ...historicalNames]));
+  const totalsByBucket = {};
+  bucketNames.forEach(n => totalsByBucket[n] = 0);
+  let totalNet = 0;
+  payHistory.forEach(h => {
+    totalNet += h.net;
+    (h.channels||[]).forEach(c => { totalsByBucket[c.name] = (totalsByBucket[c.name]||0) + c.amt; });
+  });
+
+  kpiRow.innerHTML = `
+    <div class="kpi"><div class="kpi-label">Paycheques logged</div><div class="kpi-val">${payHistory.length}</div></div>
+    <div class="kpi"><div class="kpi-label">Total net logged</div><div class="kpi-val">${fmtCents(totalNet)}</div></div>
+    <div class="kpi"><div class="kpi-label">Average per paycheque</div><div class="kpi-val">${fmtCents(totalNet/payHistory.length)}</div></div>
+  `;
+
+  const rows = payHistory.map(h => {
+    const cells = bucketNames.map(n => {
+      const match = (h.channels||[]).find(c => c.name === n);
+      return `<td class="num">${match ? fmtCents(match.amt) : fmtCents(0)}</td>`;
+    }).join('');
+    return `<tr><td>${h.date}</td><td class="num">${fmtCents(h.net)}</td>${cells}</tr>`;
+  }).join('');
+
+  const totalsCells = bucketNames.map(n => `<td class="num">${fmtCents(totalsByBucket[n])}</td>`).join('');
+
+  wrap.innerHTML = `
+    <div class="txn-table-wrap">
+      <table class="history-table">
+        <thead><tr><th>Date</th><th class="num">Net pay</th>${bucketNames.map(n=>`<th class="num">${n}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="totals-row"><td>Total</td><td class="num">${fmtCents(totalNet)}</td>${totalsCells}</tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  wireHistoryBucketPicker(bucketNames);
+  renderAccountHistoryTable();
+  renderAccountChangeLog();
+}
+
+function renderAccountHistoryTable(){
+  const wrap = document.getElementById('accountHistoryTableWrap');
+  if (!wrap) return;
+  if (!payHistory.length){
+    wrap.innerHTML = '<p class="empty">No paycheques logged yet.</p>';
+    return;
+  }
+
+  const currentAccts = channels.map(c=>c.tag);
+  const historicalAccts = payHistory.flatMap(h => (h.channels||[]).map(c=>c.tag));
+  const acctNames = Array.from(new Set([...currentAccts, ...historicalAccts]));
+
+  const totalsByAcct = {};
+  acctNames.forEach(n => totalsByAcct[n] = 0);
+  let totalNet = 0;
+  payHistory.forEach(h => {
+    totalNet += h.net;
+    (h.channels||[]).forEach(c => { totalsByAcct[c.tag] = (totalsByAcct[c.tag]||0) + c.amt; });
+  });
+
+  const rows = payHistory.map(h => {
+    const perAcct = {};
+    (h.channels||[]).forEach(c => { perAcct[c.tag] = (perAcct[c.tag]||0) + c.amt; });
+    const cells = acctNames.map(n => `<td class="num">${fmtCents(perAcct[n] || 0)}</td>`).join('');
+    return `<tr><td>${h.date}</td><td class="num">${fmtCents(h.net)}</td>${cells}</tr>`;
+  }).join('');
+
+  const totalsCells = acctNames.map(n => `<td class="num">${fmtCents(totalsByAcct[n])}</td>`).join('');
+
+  wrap.innerHTML = `
+    <div class="txn-table-wrap">
+      <table class="history-table">
+        <thead><tr><th>Date</th><th class="num">Net pay</th>${acctNames.map(n=>`<th class="num">${n}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${rows}
+          <tr class="totals-row"><td>Total</td><td class="num">${fmtCents(totalNet)}</td>${totalsCells}</tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAccountChangeLog(){
+  const wrap = document.getElementById('acctChangeLogWrap');
+  if (!wrap) return;
+  if (!accountChangeLog.length){
+    wrap.innerHTML = '<p class="empty">No account reassignments yet — this fills in whenever you change which account a bucket routes to.</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="txn-table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Bucket</th><th>From</th><th>To</th></tr></thead>
+        <tbody>
+          ${accountChangeLog.map(e => `<tr><td>${e.date}</td><td>${e.bucket}</td><td class="kpi-sub">${e.from}</td><td>${e.to}</td></tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function monthShortLabel(m){ const [y,mm] = m.split('-'); return MONTH_SHORT[parseInt(mm,10)-1] + ' ' + y; }
+
+function aggregateMonthlyForBucket(name){
+  const monthly = {};
+  payHistory.forEach(h => {
+    const c = (h.channels||[]).find(x=>x.name===name);
+    if (!c) return;
+    const month = h.date.slice(0,7);
+    if (!monthly[month]) monthly[month] = { actual:0, target:0, hasTarget: !!c.hasTarget };
+    monthly[month].actual += c.amt;
+    if (c.hasTarget && c.targetAmt !== null && c.targetAmt !== undefined) monthly[month].target += c.targetAmt;
+  });
+  const months = Object.keys(monthly).sort();
+  return { months, data: monthly };
+}
+
+function wireHistoryBucketPicker(bucketNames){
+  const picker = document.getElementById('historyBucketPicker');
+  if (!picker) return;
+  picker.innerHTML = bucketNames.map(n => `<option value="${n}">${n}</option>`).join('');
+  picker.addEventListener('change', () => renderHistoryBucketChart(picker.value));
+  renderHistoryBucketChart(bucketNames[0]);
+}
+
+function renderHistoryBucketChart(name){
+  const container = document.getElementById('historyChartsGrid');
+  if (!container) return;
+  if (chartInstances['hist-current']){ chartInstances['hist-current'].destroy(); delete chartInstances['hist-current']; }
+
+  const { months, data } = aggregateMonthlyForBucket(name);
+  if (!months.length){
+    container.innerHTML = '<p class="empty">No logged paycheques for this bucket yet.</p>';
+    return;
+  }
+  const hasTarget = data[months[0]].hasTarget;
+  container.innerHTML = `<div class="chart-box" style="height:280px;"><canvas id="historyBucketCanvas"></canvas></div>`;
+  const canvas = document.getElementById('historyBucketCanvas');
+  const labels = months.map(monthShortLabel);
+
+  const datasets = [];
+  if (hasTarget){
+    datasets.push({ label:'Target', data: months.map(m=>data[m].target), borderColor:'#5C7A99', backgroundColor:'#5C7A99', tension:0.2, pointRadius:3 });
+    datasets.push({ label:'Deviation', data: months.map(m=>data[m].actual - data[m].target), borderColor:'#C1553B', backgroundColor:'#C1553B', tension:0.2, pointRadius:3 });
+  } else {
+    datasets.push({ label:'Amount (no fixed target for this bucket)', data: months.map(m=>data[m].actual), borderColor:'#6B8F63', backgroundColor:'#6B8F63', tension:0.2, pointRadius:3 });
+  }
+
+  chartInstances['hist-current'] = new Chart(canvas, {
+    type:'line',
+    data:{ labels, datasets },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, color:'#8C8171'}} },
+      scales:{ y:{ ticks:{ callback:v=>'$'+v.toLocaleString(), color:'#8C8171' }, grid:{color:'#E4D6BC'} }, x:{ ticks:{color:'#8C8171'}, grid:{display:false} } } }
+  });
+}
+
+/* =========================================================
+   SPENDING DASHBOARD (CSV-based)
+   ========================================================= */
+const BAKED_RAW = {"months": [], "monthly_category_net": {}, "monthly_txns": {}};
+
+function txnHash(date, desc, amount, account){
+  const str = date+'|'+desc+'|'+amount.toFixed(2)+'|'+(account||'');
+  let hash=0;
+  for(let i=0;i<str.length;i++){ hash = (hash*31 + str.charCodeAt(i))|0; }
+  return 'h'+hash;
+}
+
+/* Personal categorization rules — names of people you send rent to or receive
+   reimbursements from, your own name, and your employer's payroll descriptor.
+   Deliberately EMPTY in the shipped file: these are personal identifiers and
+   must never be committed. They load from local storage and travel in your
+   backup .json. Edit them under Accounts, or restore a backup. */
+const EMPTY_PERSONAL_RULES = { rentOut: [], rentIn: [], selfNames: [], employers: [] };
+let personalRules = JSON.parse(JSON.stringify(EMPTY_PERSONAL_RULES));
+
+async function loadPersonalRules(){
+  try{
+    const s = await window.storage.get('personal-rules');
+    if (s && s.value) personalRules = Object.assign({}, EMPTY_PERSONAL_RULES, JSON.parse(s.value));
+  }catch(e){}
+}
+async function savePersonalRules(){
+  try{ await window.storage.set('personal-rules', JSON.stringify(personalRules)); }catch(e){}
+}
+
+function extractWho(desc){
+  const m = desc.match(/(?:E-TRANSFER|TRANSFER|REQUEST)\s+\d+\s*(.*)/i);
+  let who = m ? m[1].trim() : '';
+  who = who.replace(/\bTO CARD.*/i,'').trim();
+  return who.toUpperCase();
+}
+
+function categorizeTxn(desc, debit, credit){
+  const d = desc.toUpperCase();
+  const isTransferish = d.includes('E-TRANSFER') || d.includes('INTERNET TRANSFER') || d.includes('FULFILL REQUEST');
+  const who = isTransferish ? extractWho(desc) : '';
+  if (personalRules.rentOut.some(n=>n && who.includes(n)) && debit>0) return 'Rent (to landlord)';
+  if (personalRules.rentIn.some(n=>n && who.includes(n)) && credit>0) return 'Roommate reimbursement';
+  if (d.includes('ICICI')) return 'ICICI (excluded)';
+  if (personalRules.employers.some(n=>n && d.includes(n))) return 'Paycheque';
+  if (d.includes('TAX REFUND') || d.includes('IMPÔT')) return 'Tax refund';
+  if (d.includes('UBER')) return 'Uber';
+  if (d.includes('FIT4LESS') || d.includes('GOODLIFE')) return 'Subscriptions';
+  if (d.includes('APPLE.COM')) return 'Subscriptions';
+  if (d.includes('ROGERS')) return 'Subscriptions';
+  if (d.includes('PLAYSTATION')) return 'Subscriptions';
+  if (d.includes('NETFLIX')||d.includes('SPOTIFY')||d.includes('AMAZON PRIME')||d.includes('DISNEY')||d.includes('CRAVE')||d.includes('XBOX')) return 'Subscriptions';
+  if (d.includes('AVIVA')) return 'Insurance';
+  if (d.includes('ENBRIDGE')) return 'Utilities';
+  if (d.includes('MASTERCARD, TRIANGLE') || d.includes('TRIANGLE')) return 'Credit card payment';
+  if (d.includes('AFFIRM') || d.includes('KLARNA')) return 'BNPL';
+  if (d.includes('ATM WITHDRAWAL') || d.includes('NETWORK TRANSACTION FEE')) return 'ATM/fees';
+  if (d.includes('OVERDRAFT') || d.includes('SERVICE CHARGE') || d.includes('RECORD-KEEPING')) return 'Bank fees';
+  if (d.includes('CANNABIS')||d.includes('CANNA CABANA')||d.includes('LCBO')||d.includes('TAVERN')||d.includes('SCOOPS')||d.includes('CINEMAS')||d.includes('OXYGE')) return 'Discretionary (dining/leisure)';
+  if (d.includes('REMITLY')) return 'Remitly (excluded)';
+  if (d.includes('CPA PROF CORP')) return 'CPA fee';
+  if (d.includes('ESSO')||d.includes('CIRCLE K')||d.includes('PETRO-CANADA')||d.includes('SHELL')) return 'Gas station';
+  if (d.includes('TEMU')) return 'Online retail';
+  if (isTransferish && who && personalRules.selfNames.some(n=>n && who.includes(n))) return 'Own-name transfer (excluded)';
+  if (isTransferish) return 'Unclassified transfers';
+  return 'Other/uncategorized';
+}
+
+function cleanDesc(desc){
+  let d = desc;
+  d = d.replace(/\b\d{6,}\b/g,'');
+  d = d.replace(/Point of Sale - Visa Debit\s*/,'');
+  d = d.replace(/VISA DEBIT (RETAIL PURCHASE|MERCHANDISE RET REV|PURCHASE REVERSAL)\s*/,'');
+  d = d.replace(/CORRECTION\s*/,'Correction: ');
+  d = d.replace(/Internet Banking\s*/,'');
+  d = d.replace(/Electronic Funds Transfer\s*/,'');
+  d = d.replace(/Point of Sale - Interac RETAIL PURCHASE\s*/,'');
+  d = d.replace(/Branch Transaction\s*/,'');
+  d = d.replace(/Automated Banking Machine\s*/,'');
+  d = d.replace(/\s+/g,' ').trim();
+  return d.slice(0,60);
+}
+
+let MONTHS = [...BAKED_RAW.months];
+let CATNET = JSON.parse(JSON.stringify(BAKED_RAW.monthly_category_net));
+let TXNS = JSON.parse(JSON.stringify(BAKED_RAW.monthly_txns));
+let overrides = {};
+let chartInstances = {};
+
+MONTHS.forEach(m => {
+  TXNS[m].forEach(t => {
+    if (!t.account) t.account = 'Chequing';
+    if (t.category === 'Other transfers') t.category = 'Unclassified transfers';
+    t.id = txnHash(t.date, t.desc, t.amount, t.account);
+  });
+});
+let learnedRules = {};
+
+function merchantSignature(desc){
+  let d = desc.toUpperCase();
+  d = d.replace(/\d+/g, '');
+  d = d.replace(/[^A-Z\s\/,.\-]/g, '');
+  d = d.replace(/\s+/g, ' ').trim();
+  return d;
+}
+
+async function loadLearnedRules(){
+  try{ const s = await window.storage.get('dashboard-learned-rules'); if (s && s.value) learnedRules = JSON.parse(s.value); }catch(e){}
+}
+async function saveLearnedRules(){ try{ await window.storage.set('dashboard-learned-rules', JSON.stringify(learnedRules)); }catch(e){} }
+
+function applyLearnedRules(){
+  const affectedMonths = new Set();
+  MONTHS.forEach(m => {
+    TXNS[m].forEach(t => {
+      if (overrides[t.id] && overrides[t.id].category) return; // explicit per-transaction pick wins
+      const sig = merchantSignature(t.desc);
+      const learned = learnedRules[sig];
+      if (learned && learned !== t.category){
+        t.category = learned;
+        affectedMonths.add(m);
+      }
+    });
+  });
+  affectedMonths.forEach(m => recomputeMonthCategoryNet(m));
+}
+
+const CAT_GROUPS = {
+  netRent: ['Rent (to landlord)','Roommate reimbursement'],
+  uber: ['Uber'], insurance: ['Insurance'], utilities: ['Utilities'],
+  subs: ['Subscriptions'], bnpl: ['BNPL'], cc: ['Credit card payment'],
+  fees: ['Bank fees','ATM/fees'], discretionary: ['Discretionary (dining/leisure)','Gas station'],
+  otherUncat: ['Other/uncategorized','CPA fee'], blindSpot: ['Unclassified transfers'],
+  income: ['Paycheque','Tax refund']
+};
+function sumCat(monthObj, names){ let v=0; names.forEach(n=>{ if(monthObj[n]!==undefined) v+=monthObj[n]; }); return v; }
+function groupTotals(monthObj){
+  const g = {};
+  Object.keys(CAT_GROUPS).forEach(k => g[k] = sumCat(monthObj, CAT_GROUPS[k]));
+  g.income = -g.income;
+  return g;
+}
+const spendKeys = ['netRent','uber','insurance','utilities','subs','bnpl','cc','fees','discretionary','otherUncat','blindSpot'];
+const catSeriesDef = [
+  {key:'netRent', label:'Net rent', color:'#5C7A99'}, {key:'uber', label:'Uber', color:'#D9713A'},
+  {key:'insurance', label:'Insurance', color:'#9B7B93'}, {key:'utilities', label:'Utilities', color:'#6B8F63'},
+  {key:'subs', label:'Subscriptions', color:'#B98089'}, {key:'bnpl', label:'BNPL', color:'#C1553B'},
+  {key:'cc', label:'Credit card pmt', color:'#8C8171'}, {key:'fees', label:'Fees', color:'#8A6D3B'},
+  {key:'discretionary', label:'Discretionary', color:'#E0A458'}, {key:'otherUncat', label:'Other', color:'#B4A996'},
+  {key:'blindSpot', label:'Unclassified transfers', color:'#736A5B'}
+];
+
+function recomputeMonthCategoryNet(m){
+  const totals = {};
+  TXNS[m].forEach(t => { totals[t.category] = (totals[t.category]||0) + t.amount; });
+  CATNET[m] = totals;
+}
+function nMonthsEstimate(){
+  let minDate=null, maxDate=null;
+  MONTHS.forEach(m => TXNS[m].forEach(t => {
+    if (!minDate || t.date < minDate) minDate = t.date;
+    if (!maxDate || t.date > maxDate) maxDate = t.date;
+  }));
+  if (!minDate) return 1;
+  const days = (new Date(maxDate) - new Date(minDate)) / 86400000 + 1;
+  return Math.max(days/30.44, 1);
+}
+
+async function loadOverrides(){ try{ const s = await window.storage.get('dashboard-overrides'); if (s && s.value) overrides = JSON.parse(s.value); }catch(e){} }
+async function saveOverrides(){ try{ await window.storage.set('dashboard-overrides', JSON.stringify(overrides)); }catch(e){} }
+function getDisplayCategory(t){ return (overrides[t.id] && overrides[t.id].category) || t.category; }
+function getNote(t){ return (overrides[t.id] && overrides[t.id].note) || ''; }
+function getAccount(t){ return (overrides[t.id] && overrides[t.id].account) || t.account || 'Chequing'; }
+
+async function loadUploadedTxns(){
+  try{
+    const s = await window.storage.get('dashboard-uploaded-txns');
+    if (s && s.value){ mergeTxnsIntoState(JSON.parse(s.value), false); }
+  }catch(e){}
+}
+async function persistUploadedTxns(newRecords){
+  try{
+    const s = await window.storage.get('dashboard-uploaded-all');
+    let all = [];
+    if (s && s.value) all = JSON.parse(s.value);
+    all = all.concat(newRecords);
+    await window.storage.set('dashboard-uploaded-all', JSON.stringify(all));
+    await window.storage.set('dashboard-uploaded-txns', JSON.stringify(all));
+    return true;
+  }catch(e){ console.error(e); return false; }
+}
+function mergeTxnsIntoState(records, dedupe){
+  const existingIds = new Set();
+  MONTHS.forEach(m => TXNS[m].forEach(t => existingIds.add(t.id)));
+  const affectedMonths = new Set();
+  records.forEach(r => {
+    if (dedupe && existingIds.has(r.id)) return;
+    if (!TXNS[r.month]) { TXNS[r.month] = []; }
+    TXNS[r.month].push(r);
+    affectedMonths.add(r.month);
+    existingIds.add(r.id);
+  });
+  affectedMonths.forEach(m => {
+    if (!MONTHS.includes(m)) MONTHS.push(m);
+    TXNS[m].sort((a,b) => a.date < b.date ? 1 : -1);
+    recomputeMonthCategoryNet(m);
+  });
+  MONTHS.sort();
+}
+function parseCsvText(text, accountName){
+  const parsed = Papa.parse(text.trim(), { skipEmptyLines:true });
+  const records = [];
+  parsed.data.forEach(row => {
+    if (row.length < 4) return;
+    const date = (row[0]||'').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    const desc = (row[1]||'').trim();
+    const debit = parseFloat(row[2]) || 0;
+    const credit = parseFloat(row[3]) || 0;
+    const category = categorizeTxn(desc, debit, credit);
+    const amount = Math.round((debit - credit) * 100) / 100;
+    const cleaned = cleanDesc(desc);
+    const account = accountName || 'Unknown account';
+    records.push({ date, month: date.slice(0,7), desc: cleaned, category, amount, account, id: txnHash(date, cleaned, amount, account) });
+  });
+  return records;
+}
+
+function destroyCharts(){
+  Object.values(chartInstances).forEach(c => c.destroy());
+  chartInstances = {};
+}
+
+function buildOverview(){
+  const ov = document.createElement('div');
+  ov.className = 'section';
+  ov.dataset.section = 'overview';
+  ov.innerHTML = `
+    <div class="kpi-row" id="kpiRow"></div>
+    <div class="card"><h2>Income vs total spend, by month</h2><div class="chart-box"><canvas id="incomeChart"></canvas></div></div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2 style="margin:0;">Month deep-dive</h2>
+        <select class="cat-select" id="monthPicker" style="max-width:180px;"></select>
+      </div>
+      <div id="monthDetailContainer"></div>
+    </div>
+
+    <details class="card" id="catTotalsDetails">
+      <summary class="card-title" style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+        <span>Category totals</span>
+        <span style="font-size:11px;color:var(--label);">expand ▾</span>
+      </summary>
+      <table style="margin-top:14px;"><thead><tr><th>Category</th><th class="num">Total</th><th class="num">Monthly avg</th></tr></thead><tbody id="catTableBody"></tbody></table>
+    </details>
+  `;
+  sectionsEl.appendChild(ov);
+
+  refreshOverviewContents();
+  wireMonthPicker(ov);
+}
+
+function refreshOverviewContents(){
+  const allTotals = {}; Object.keys(CAT_GROUPS).forEach(k => allTotals[k]=0);
+  MONTHS.forEach(m => { const g = groupTotals(CATNET[m]); Object.keys(g).forEach(k => allTotals[k]+=g[k]); });
+  const totalSpendAll = spendKeys.reduce((a,k)=>a+allTotals[k],0);
+  const N_MONTHS = nMonthsEstimate();
+
+  const avgIncome = allTotals.income / N_MONTHS;
+  const avgSpend = totalSpendAll / N_MONTHS;
+  const avgNet = avgIncome - avgSpend;
+
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi-hero black">
+      <div class="kpi-hero-val">${fmt(avgIncome)}</div>
+      <div class="kpi-hero-caption">Avg monthly income</div>
+    </div>
+    <div class="kpi-hero orange">
+      <div class="kpi-hero-val">${fmt(avgSpend)}</div>
+      <div class="kpi-hero-caption">Avg monthly spend</div>
+    </div>
+    <div class="kpi-hero peach">
+      <div class="kpi-hero-val">${fmt(avgNet)}</div>
+      <div class="kpi-hero-caption">Avg monthly leftover</div>
+    </div>
+    <div class="kpi-hero blue">
+      <div class="kpi-hero-val">${fmt(computeBucketCumulative().totals['Save'] || 0)}</div>
+      <div class="kpi-hero-caption">Total saved to date</div>
+    </div>
+  `;
+
+  const monthLabels = MONTHS.map(monthShort);
+  if (chartInstances.income) chartInstances.income.destroy();
+  if (chartInstances.cat) chartInstances.cat.destroy();
+
+  chartInstances.income = new Chart(document.getElementById('incomeChart'), {
+    type:'bar',
+    data:{ labels: monthLabels, datasets:[
+      { label:'Income', data: MONTHS.map(m=>groupTotals(CATNET[m]).income), backgroundColor:'#6B8F63', borderRadius:4 },
+      { label:'Total spend', data: MONTHS.map(m=>{const g=groupTotals(CATNET[m]); return spendKeys.reduce((a,k)=>a+g[k],0);}), backgroundColor:'#D9713A', borderRadius:4 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, color:'#8C8171'}} },
+      scales:{ y:{ ticks:{ callback:v=>'$'+v.toLocaleString(), color:'#8C8171' }, grid:{color:'#E4D6BC'} }, x:{ ticks:{ color:'#8C8171' }, grid:{display:false} } } }
+  });
+
+  const tableRows = catSeriesDef.map(s => [s.label, allTotals[s.key]]);
+  document.getElementById('catTableBody').innerHTML = tableRows.sort((a,b)=>b[1]-a[1])
+    .map(([name,t]) => `<tr><td>${name}</td><td class="num">${fmt(t)}</td><td class="num">${fmt(t/N_MONTHS)}</td></tr>`).join('');
+}
+
+function wireCsvUpload(container, accountName){
+  const dropZone = container.querySelector('.drop-zone');
+  const fileInput = container.querySelector('.csv-file-input');
+  const previewArea = container.querySelector('.preview-area');
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+  function handleFile(file){
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result;
+      const existingIds = new Set();
+      MONTHS.forEach(m => TXNS[m].forEach(t => existingIds.add(t.id)));
+      const records = parseCsvText(text, accountName);
+      const newOnes = records.filter(r => !existingIds.has(r.id));
+      const dupCount = records.length - newOnes.length;
+      pendingRecords = newOnes;
+
+      if (!newOnes.length){
+        previewArea.innerHTML = `<div class="status-msg">Parsed ${records.length} rows from ${accountName}, all ${dupCount} already in the dashboard — nothing new to add.</div>`;
+        return;
+      }
+      const dates = newOnes.map(r=>r.date).sort();
+      previewArea.innerHTML = `
+        <div class="preview-summary">
+          <div>
+            <div><span class="stat">${newOnes.length}</span> new transactions from <span class="stat">${accountName}</span>${dupCount ? ` (${dupCount} duplicates skipped)` : ''}</div>
+            <div class="kpi-sub">${dates[0]} → ${dates[dates.length-1]}</div>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="ghost-btn" id="cancelMergeBtn">Cancel</button>
+            <button class="primary-btn" id="mergeBtn">Merge ${newOnes.length} transactions</button>
+          </div>
+        </div>
+      `;
+      previewArea.querySelector('#mergeBtn').addEventListener('click', async () => {
+        mergeTxnsIntoState(pendingRecords, true);
+        applyLearnedRules();
+        const saved = await persistUploadedTxns(pendingRecords);
+        pendingRecords = [];
+        if (!saved){
+          previewArea.innerHTML = `<div class="status-msg" style="color:var(--red);">Merged for this session, but saving to storage failed — these transactions may disappear on reload. Try uploading again shortly to be safe.</div>`;
+          setTimeout(rebuildAll, 2500);
+          return;
+        }
+        previewArea.innerHTML = `<div class="status-msg">Merged and saved. Rebuilding dashboard...</div>`;
+        rebuildAll();
+      });
+      previewArea.querySelector('#cancelMergeBtn').addEventListener('click', () => {
+        pendingRecords = [];
+        previewArea.innerHTML = '';
+        fileInput.value = '';
+      });
+    };
+    reader.readAsText(file);
+  }
+}
+
+function wireMonthPicker(container){
+  const picker = container.querySelector('#monthPicker');
+  picker.innerHTML = MONTHS.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join('');
+  const defaultMonth = MONTHS[MONTHS.length-1];
+  picker.value = defaultMonth;
+  picker.addEventListener('change', () => renderMonthDetail(picker.value));
+  renderMonthDetail(defaultMonth);
+}
+
+function renderMonthDetail(m){
+  const container = document.getElementById('monthDetailContainer');
+  if (!container || !TXNS[m]) return;
+  if (chartInstances['m-'+m]) { chartInstances['m-'+m].destroy(); delete chartInstances['m-'+m]; }
+
+  const allCategories = Array.from(new Set(Object.values(TXNS).flat().map(t => t.category))).sort();
+  const g = groupTotals(CATNET[m]);
+  const spend = spendKeys.reduce((a,k)=>a+g[k],0);
+  const net = g.income - spend;
+  const txns = TXNS[m];
+
+  container.innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Income</div><div class="kpi-val">${fmt(g.income)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total spend</div><div class="kpi-val">${fmt(spend)}</div></div>
+      <div class="kpi"><div class="kpi-label">Net</div><div class="kpi-val" style="color:${net>=0?'var(--teal)':'var(--red)'}">${fmt(net)}</div></div>
+      <div class="kpi"><div class="kpi-label">Uber this month</div><div class="kpi-val">${fmt(g.uber)}</div></div>
+    </div>
+    <div class="chart-box small" style="margin-bottom:18px;"><canvas id="chart-${m}"></canvas></div>
+    <div class="card-header">
+      <h2 style="margin:0;">Every transaction (${txns.length})</h2>
+      <div class="chip-row" style="align-items:center;">
+        <button class="primary-btn" id="acceptChangesBtn" style="display:none;"></button>
+        <select class="cat-select" id="filter-${m}" style="max-width:220px;">
+          <option value="all">All categories</option>
+          ${allCategories.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="txn-table-wrap">
+      <table>
+        <thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th>Note</th><th class="num">Amount</th></tr></thead>
+        <tbody id="tbody-${m}">${txns.map(t=>renderTxnRow(t, allCategories)).join('')}</tbody>
+      </table>
+    </div>
+  `;
+  wireTxnControls(container);
+
+  const filterSelect = container.querySelector('#filter-'+m);
+  filterSelect.addEventListener('change', () => {
+    const val = filterSelect.value;
+    container.querySelectorAll('#tbody-'+m+' tr').forEach(row => {
+      const rowCatSelect = row.querySelector('.cat-select');
+      const rowCat = rowCatSelect ? rowCatSelect.value : '';
+      row.style.display = (val === 'all' || rowCat === val) ? '' : 'none';
+    });
+  });
+
+  const barLabels = catSeriesDef.map(s=>s.label);
+  const barData = catSeriesDef.map(s=>g[s.key]);
+  const barColors = catSeriesDef.map(s=>s.color);
+  setTimeout(() => {
+    chartInstances['m-'+m] = new Chart(document.getElementById('chart-'+m), {
+      type:'bar',
+      data:{ labels: barLabels, datasets:[{ data: barData, backgroundColor: barColors, borderRadius:4 }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}, tooltip:{callbacks:{label:c=>fmt(c.parsed.x)}}},
+        scales:{ x:{ ticks:{ callback:v=>'$'+v.toLocaleString(), color:'#8C8171' }, grid:{color:'#E4D6BC'} }, y:{ ticks:{ color:'#8C8171', autoSkip:false, font:{size:11} }, grid:{display:false} } } }
+    });
+  }, 0);
+}
+
+function renderTxnRow(t, allCategories){
+  const catOptions = allCategories.map(c => `<option value="${c}" ${getDisplayCategory(t)===c?'selected':''}>${c}</option>`).join('');
+  const pendingCls = pendingChanges[t.id] !== undefined ? ' pending-edit' : '';
+  return `<tr class="${t.amount<0?'income':'expense'}" data-txn="${t.id}">
+      <td>${t.date.slice(5)}</td>
+      <td>${t.desc}</td>
+      <td><span class="cat-pill">${getAccount(t)}</span></td>
+      <td><select class="cat-select${pendingCls}" data-txn="${t.id}">${catOptions}</select></td>
+      <td><input class="note-input" data-txn="${t.id}" type="text" placeholder="add a note..." value="${getNote(t)}"></td>
+      <td class="num">${fmt(t.amount)}</td>
+    </tr>`;
+}
+function findTxnById(id){
+  for (const m of MONTHS){
+    const found = TXNS[m].find(t => t.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+
+let pendingChanges = {};
+
+function updateAcceptButton(){
+  const btn = document.getElementById('acceptChangesBtn');
+  if (!btn) return;
+  const count = Object.keys(pendingChanges).length;
+  if (count > 0){
+    btn.style.display = 'inline-flex';
+    btn.textContent = `Accept ${count} change${count>1?'s':''}`;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+async function acceptPendingChanges(){
+  const ids = Object.keys(pendingChanges);
+  if (!ids.length) return;
+  ids.forEach(id => {
+    const txn = findTxnById(id);
+    if (txn){
+      const sig = merchantSignature(txn.desc);
+      if (sig) learnedRules[sig] = pendingChanges[id];
+    }
+  });
+  pendingChanges = {};
+  await saveLearnedRules();
+  applyLearnedRules();
+  refreshOverviewContents();
+
+  const picker = document.getElementById('monthPicker');
+  if (picker){
+    const currentFilterSel = document.getElementById('filter-'+picker.value);
+    const preservedFilter = currentFilterSel ? currentFilterSel.value : 'all';
+    renderMonthDetail(picker.value);
+    const newFilterSel = document.getElementById('filter-'+picker.value);
+    if (newFilterSel && preservedFilter !== 'all'){
+      newFilterSel.value = preservedFilter;
+      newFilterSel.dispatchEvent(new Event('change'));
+    }
+  }
+  updateAcceptButton();
+}
+
+function wireTxnControls(container){
+  container.querySelectorAll('.cat-select[data-txn]').forEach(sel => {
+    sel.addEventListener('change', async e => {
+      const id = e.target.dataset.txn;
+      const newCat = e.target.value;
+      if (!overrides[id]) overrides[id] = {};
+      overrides[id].category = newCat;
+      await saveOverrides();
+      pendingChanges[id] = newCat;
+      e.target.classList.add('pending-edit');
+      updateAcceptButton();
+    });
+  });
+  container.querySelectorAll('.note-input').forEach(inp => {
+    inp.addEventListener('change', e => {
+      const id = e.target.dataset.txn;
+      if (!overrides[id]) overrides[id] = {};
+      overrides[id].note = e.target.value;
+      saveOverrides();
+    });
+  });
+  const acceptBtn = container.querySelector('#acceptChangesBtn');
+  if (acceptBtn) acceptBtn.addEventListener('click', acceptPendingChanges);
+  updateAcceptButton();
+}
+
+let pendingRecords = [];
+
+/* =========================================================
+   TOP-LEVEL ORCHESTRATION
+   ========================================================= */
+let builtSections = new Set();
+
+function activateTab(id){
+  if (!builtSections.has(id)){
+    if (id==='overview') buildOverview();
+    else if (id==='buckets') buildBucketsSection();
+    else if (id==='history') buildHistoryTabSection();
+    else if (id==='accounts') buildAccountsSection();
+    builtSections.add(id);
+  }
+  showTab(id);
+}
+
+function buildTabs(){
+  tabsEl.innerHTML = '';
+  const tabIds = ['overview','buckets','history','accounts'];
+  const labelFor = id => id==='buckets' ? 'Buckets' : (id==='history' ? 'History' : (id==='accounts' ? 'Accounts' : 'Overview'));
+  tabIds.forEach((id) => {
+    const btn = document.createElement('button');
+    let cls = 'tab-btn';
+    if (id==='buckets' || id==='history' || id==='accounts') cls += ' primary-tab';
+    btn.className = cls;
+    btn.textContent = labelFor(id);
+    btn.onclick = () => activateTab(id);
+    btn.dataset.tab = id;
+    tabsEl.appendChild(btn);
+  });
+}
+
+function renderHero(){
+  const dateEl = document.getElementById('heroDate');
+  if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+}
+
+function rebuildAll(){
+  destroyCharts();
+  tabsEl.innerHTML = '';
+  sectionsEl.innerHTML = '';
+  builtSections = new Set();
+  buildTabs();
+  activateTab('overview');
+  renderHero();
+}
+
+async function init(){
+  await loadBucketState();
+  await loadOverrides();
+  await loadUploadedTxns();
+  await loadLearnedRules();
+  await loadAccounts();
+  await loadAccountChangeLog();
+  await loadPersonalRules();
+  applyLearnedRules();
+  rebuildAll();
+}
+init();
+
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => console.error('SW registration failed', err));
+  });
+}
+</script>
+</body>
+</html>

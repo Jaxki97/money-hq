@@ -1,0 +1,7 @@
+# Never commit personal financial data.
+# Real transactions, budget figures, and name-based rules live in a backup
+# .json kept OUTSIDE this repo and loaded at runtime via Accounts > Restore.
+*private*.json
+*backup*.json
+money-hq-backup-*.json
+*.csv
