@@ -1831,7 +1831,21 @@ function rebuildAll(){
   renderHero();
 }
 
+/* Ask the browser to mark our IndexedDB as persistent. Without this, storage is
+   "best-effort" and can be evicted under disk pressure with no warning. Granting
+   is at the browser's discretion (Chrome tends to grant for installed PWAs and
+   engaged sites) and it never prompts, so a refusal is harmless — the data still
+   works, it's just evictable. Not a substitute for downloading a backup. */
+async function requestPersistentStorage(){
+  try{
+    if (!navigator.storage || !navigator.storage.persist) return null;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  }catch(e){ return null; }
+}
+
 async function init(){
+  await requestPersistentStorage();
   await loadBucketState();
   await loadOverrides();
   await loadUploadedTxns();
