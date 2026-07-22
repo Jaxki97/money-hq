@@ -1,6 +1,11 @@
-// Bump this on every deploy. On activate, ALL caches whose name differs from
-// CACHE_NAME are deleted, so bumping it purges anything stale — including a
-// previously cached index.html. Do not reuse an old value.
+// On activate, ALL caches whose name differs from CACHE_NAME are deleted, so
+// renaming this is what forces a purge.
+//
+// Because fetches below are network-first, routine edits do NOT need a bump —
+// a fresh file reaches users on their next online load and overwrites the
+// cached entry. Bump it when that guarantee isn't enough:
+//   - purging something that must not survive (leaked or sensitive content)
+//   - a deleted/renamed file, whose orphaned cache entry is never overwritten
 const CACHE_NAME = 'money-hq-v2';
 
 const APP_SHELL = [
