@@ -782,9 +782,10 @@ function buildAccountsSection(){
   sec.className = 'section';
   sec.dataset.section = 'accounts';
   sec.innerHTML = `
-    <div class="card" style="border-color:var(--red);">
-      <h2>Backup your data</h2>
-      <p class="card-note">Given the storage instability today, download a full backup now. This file has everything — buckets, paycheque history, transactions, accounts, learned rules — and can be handed to the real desktop app version we're building.</p>
+    <div class="card">
+      <h2>Backup &amp; sync</h2>
+      <p class="card-note">Your data lives only in this browser, on this device. Download a backup regularly — the file holds everything (buckets, paycheque history, transactions, accounts, and rules) and is the only copy that survives clearing site data, switching browsers, or a lost device.</p>
+      <p class="card-note">To move data to another device, download the backup here and Restore it there. Note that <strong>Restore replaces everything</strong> on the device you run it on — so keep one device as your main one and always copy from it to the others, never the reverse.</p>
       <div class="btn-row">
         <button class="primary" id="exportBackupBtn">Download full backup (.json)</button>
         <button class="ghost-btn" id="importBackupBtnTrigger">Restore from backup</button>
