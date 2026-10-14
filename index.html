@@ -151,6 +151,32 @@
   .info:hover,.info:focus{border-color:var(--amber);color:var(--amber);outline:none;}
   .info .info-pop{display:none;position:absolute;left:0;top:150%;width:240px;max-width:72vw;background:var(--text);color:var(--panel);font-size:12px;font-style:normal;font-weight:400;line-height:1.45;letter-spacing:0;text-transform:none;padding:9px 11px;border-radius:8px;z-index:30;box-shadow:0 6px 18px rgba(60,45,20,0.22);}
   .info:hover .info-pop,.info:focus .info-pop,.info:focus-within .info-pop{display:block;}
+  .fixflex{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px;}
+  .fixflex > div{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;gap:10px;}
+  .fixflex-label{color:var(--label);}
+  .fixflex-val{font-family:var(--font-mono);color:var(--text);font-weight:500;white-space:nowrap;}
+  .fixflex-val.bad{color:var(--red);}
+  .goal{padding:14px 0;border-top:1px solid var(--line);}
+  .goal:first-child{border-top:none;padding-top:4px;}
+  .goal-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;gap:10px;}
+  .goal-name{font-weight:600;color:var(--text);}
+  .goal-amts{font-family:var(--font-mono);font-size:13px;color:var(--label);white-space:nowrap;}
+  .goal-done .goal-amts{color:var(--teal);font-weight:600;}
+  .goal-bar{height:10px;background:var(--panel-2);border-radius:999px;overflow:hidden;}
+  .goal-fill{height:100%;width:0;background:var(--amber);border-radius:999px;transition:width .35s ease;}
+  .goal-fill.done{background:var(--teal);}
+  .goal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px;flex-wrap:wrap;}
+  .goal-pct{font-size:12px;color:var(--label);}
+  .goal-actions{display:flex;align-items:center;gap:6px;}
+  .goal-add-wrap{display:flex;align-items:center;gap:2px;}
+  .goal-dollar{color:var(--label);font-size:13px;}
+  .goal-add-input{width:72px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--text);text-align:right;padding:4px 6px;font-size:13px;}
+  button.goal-add-btn{padding:6px 12px;font-size:12px;}
+  button.goal-del-btn{padding:6px 10px;font-size:12px;}
+  .goal-create{display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap;}
+  .goal-create .note-input{width:auto;flex:1;min-width:140px;}
+  .goal-target-wrap{display:flex;align-items:center;gap:4px;flex:0 0 auto;}
+  .goal-target-wrap .note-input{flex:0 0 auto;}
 
   .empty{font-size:12px;color:var(--label);font-style:italic;padding:6px 0;}
 
@@ -270,6 +296,7 @@ function updatePayNote(){
   if (!el) return;
   const freqWord = {weekly:'week', biweekly:'2 weeks', monthly:'month'}[frequency];
   el.textContent = `Standard pay is ${fmtCents(standardPay)}/${freqWord}. Any extra is included here — it flows through the same percentages as everything else, so every bucket gets a little more instead of extra going to one place.`;
+  renderPayFixedSummary();
 }
 
 function renderTargetInputs(){
@@ -301,6 +328,7 @@ function renderTargetInputs(){
 
   el.querySelectorAll('input[data-idx]').forEach(inp => inp.addEventListener('input', e => {
     channels[parseInt(e.target.dataset.idx)].target = parseFloat(e.target.value) || 0;
+    renderPayFixedSummary();
   }));
   el.querySelectorAll('.acct-reassign').forEach(sel => sel.addEventListener('change', async e => {
     const idx = parseInt(e.target.dataset.idx);
@@ -542,6 +570,7 @@ function updateBucketValues(){
 
   renderBalancePanel();
   renderTransferSummary();
+  renderPayFixedSummary();
 }
 
 function renderTransferSummary(){
@@ -602,6 +631,96 @@ async function migrateChannels(){
   try{ await window.storage.set('pct-router-config', JSON.stringify(channels)); }catch(e){}
 }
 
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Live "fixed vs flexible" summary in the pay-period card. Fixed = sum of every
+// bucket target ($/month) converted to this pay period; flexible = the rest.
+// Recomputed whenever targets, pay, frequency, or standard pay change.
+function renderPayFixedSummary(){
+  const el = document.getElementById('payFixedSummary');
+  if (!el) return;
+  const periods = PERIODS_PER_YEAR[frequency];
+  const net = parseFloat(document.getElementById('payAmt')?.value) || 0;
+  const basis = net > 0 ? net : standardPay;
+  const fixedPerPeriod = channels.filter(c => c.hasTarget).reduce((s,c) => s + (c.target*12/periods), 0);
+  const flexible = basis - fixedPerPeriod;
+  const freqWord = {weekly:'week', biweekly:'2 weeks', monthly:'month'}[frequency];
+  const basisLabel = net > 0 ? 'this pay' : `a standard ${freqWord}`;
+  el.innerHTML = `
+    <div class="fixflex">
+      <div><span class="fixflex-label">Fixed expenses (${basisLabel})</span><span class="fixflex-val">${fmtCents(fixedPerPeriod)}</span></div>
+      <div><span class="fixflex-label">Flexible — everything else</span><span class="fixflex-val ${flexible<0?'bad':''}">${fmtCents(flexible)}</span></div>
+    </div>`;
+}
+
+// Manual savings goals: user-created targets (e.g. a car) funded by explicit
+// contributions. Independent of paycheque logging; persisted under its own key
+// and included in backups.
+let savingsGoals = [];
+async function loadSavingsGoals(){ try{ const s = await window.storage.get('savings-goals'); if (s && s.value) savingsGoals = JSON.parse(s.value); }catch(e){} }
+async function saveSavingsGoals(){ try{ await window.storage.set('savings-goals', JSON.stringify(savingsGoals)); }catch(e){} }
+
+function renderSavingsGoals(){
+  const wrap = document.getElementById('savingsGoalsWrap');
+  if (!wrap) return;
+  if (!savingsGoals.length){
+    wrap.innerHTML = '<p class="empty">No savings goals yet — create one below (e.g. “New car”, $8,000) and track it as you set money aside.</p>';
+    return;
+  }
+  wrap.innerHTML = savingsGoals.map(g => {
+    const pct = g.target > 0 ? Math.min(100, g.saved/g.target*100) : 0;
+    const done = g.target > 0 && g.saved >= g.target;
+    return `
+    <div class="goal ${done?'goal-done':''}">
+      <div class="goal-head">
+        <span class="goal-name">${escapeHtml(g.name)}</span>
+        <span class="goal-amts">${done ? '🎯 Target achieved' : fmtCents(g.saved)+' / '+fmtCents(g.target)}</span>
+      </div>
+      <div class="goal-bar"><div class="goal-fill ${done?'done':''}" style="width:${pct}%;"></div></div>
+      <div class="goal-foot">
+        <span class="goal-pct">${pct.toFixed(0)}%${done?'':' · '+fmtCents(Math.max(0,g.target-g.saved))+' to go'}</span>
+        <span class="goal-actions">
+          <span class="goal-add-wrap"><span class="goal-dollar">$</span><input type="number" class="goal-add-input" data-id="${g.id}" placeholder="add" step="10" min="0"></span>
+          <button class="ghost-btn goal-add-btn" data-id="${g.id}">Add</button>
+          <button class="ghost-btn goal-del-btn" data-id="${g.id}" aria-label="Delete goal">✕</button>
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+
+  wrap.querySelectorAll('.goal-add-btn').forEach(b => b.addEventListener('click', () => {
+    const inp = wrap.querySelector('.goal-add-input[data-id="'+b.dataset.id+'"]');
+    const amt = parseFloat(inp && inp.value) || 0;
+    if (amt <= 0) return;
+    addGoalContribution(b.dataset.id, amt);
+  }));
+  wrap.querySelectorAll('.goal-del-btn').forEach(b => b.addEventListener('click', () => removeSavingsGoal(b.dataset.id)));
+}
+
+async function addSavingsGoal(name, target){
+  name = (name||'').trim();
+  target = parseFloat(target) || 0;
+  if (!name || target <= 0) return false;
+  savingsGoals.push({ id:'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), name, target, saved:0, createdAt:new Date().toISOString() });
+  await saveSavingsGoals();
+  renderSavingsGoals();
+  return true;
+}
+async function addGoalContribution(id, amt){
+  const g = savingsGoals.find(x => x.id === id);
+  if (!g) return;
+  g.saved = Math.max(0, Math.round((g.saved + amt)*100)/100);
+  await saveSavingsGoals();
+  renderSavingsGoals();
+}
+async function removeSavingsGoal(id){
+  const g = savingsGoals.find(x => x.id === id);
+  if (g && g.saved > 0 && !confirm('Delete “'+g.name+'”? Its '+fmtCents(g.saved)+' of tracked progress will be removed.')) return;
+  savingsGoals = savingsGoals.filter(x => x.id !== id);
+  await saveSavingsGoals();
+  renderSavingsGoals();
+}
+
 function buildBucketsSection(){
   const sec = document.createElement('div');
   sec.className = 'section';
@@ -635,6 +754,7 @@ function buildBucketsSection(){
         <p class="card-title">This pay period<span class="info" tabindex="0" role="button" aria-label="Enter the amount you received this pay cycle, after taxes and all other deductions.">i<span class="info-pop">Enter the amount you received this pay cycle, after taxes and all other deductions — your actual take-home, not your gross.</span></span></p>
         <div class="pay-input"><span>$</span><input type="number" id="payAmt" placeholder="1024.00" step="0.01" min="0"></div>
         <p class="card-note" style="margin-top:10px;" id="payNote"></p>
+        <div id="payFixedSummary"></div>
       </div>
 
       <div class="card">
@@ -651,6 +771,17 @@ function buildBucketsSection(){
           <button id="resetBtn">Reset to defaults</button>
         </div>
         <p class="status-msg" id="saveStatusMsg" style="color:var(--red);"></p>
+      </div>
+
+      <div class="card">
+        <p class="card-title">Savings goals<span class="info" tabindex="0" role="button" aria-label="Track one-off savings targets like a car or a trip.">i<span class="info-pop">Track one-off savings targets like a car or a trip. Create a goal, then add money to it whenever you set some aside — the bar fills as you go, and reads “Target achieved” once you hit it.</span></span></p>
+        <div id="savingsGoalsWrap"></div>
+        <div class="goal-create">
+          <input type="text" id="newGoalName" class="note-input" placeholder="Goal name (e.g. New car)">
+          <span class="goal-target-wrap"><span class="goal-dollar">$</span><input type="number" id="newGoalTarget" class="note-input" placeholder="Target amount" step="100" min="0" style="max-width:130px;"></span>
+          <button class="primary" id="addGoalBtn" style="flex:0 0 auto;">+ Add goal</button>
+        </div>
+        <p class="status-msg" id="goalMsg" style="color:var(--red);"></p>
       </div>
 
       <div class="card">
@@ -724,6 +855,18 @@ function buildBucketsSection(){
   document.getElementById('setStdPay').value = standardPay;
   renderTargetInputs();
   renderBuckets();
+
+  renderSavingsGoals();
+  const addGoalBtn = document.getElementById('addGoalBtn');
+  if (addGoalBtn) addGoalBtn.addEventListener('click', async () => {
+    const nameEl = document.getElementById('newGoalName');
+    const targetEl = document.getElementById('newGoalTarget');
+    const msg = document.getElementById('goalMsg');
+    const ok = await addSavingsGoal(nameEl.value, targetEl.value);
+    if (!ok){ if (msg) msg.textContent = 'Enter a goal name and a target amount above $0.'; return; }
+    if (msg) msg.textContent = '';
+    nameEl.value = ''; targetEl.value = '';
+  });
 }
 
 function buildHistoryTabSection(){
@@ -822,7 +965,7 @@ function buildAccountsSection(){
         exportedAt: new Date().toISOString(),
         channels, standardPay, frequency, payHistory,
         overrides, learnedRules, accounts, accountChangeLog,
-        personalRules,
+        personalRules, savingsGoals,
         months: MONTHS, transactions: TXNS
       };
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -864,6 +1007,7 @@ function buildAccountsSection(){
       accounts = backup.accounts || accounts;
       accountChangeLog = backup.accountChangeLog || accountChangeLog;
       personalRules = Object.assign({}, EMPTY_PERSONAL_RULES, backup.personalRules || {});
+      savingsGoals = Array.isArray(backup.savingsGoals) ? backup.savingsGoals : savingsGoals;
       MONTHS = backup.months || MONTHS;
       TXNS = backup.transactions || TXNS;
 
@@ -876,6 +1020,7 @@ function buildAccountsSection(){
       await window.storage.set('accounts-list', JSON.stringify(accounts));
       await window.storage.set('account-change-log', JSON.stringify(accountChangeLog));
       await savePersonalRules();
+      await saveSavingsGoals();
       await window.storage.set('dashboard-uploaded-all', JSON.stringify(Object.values(TXNS).flat()));
       await window.storage.set('dashboard-uploaded-txns', JSON.stringify(Object.values(TXNS).flat()));
 
@@ -1859,6 +2004,7 @@ async function init(){
   await loadAccounts();
   await loadAccountChangeLog();
   await loadPersonalRules();
+  await loadSavingsGoals();
   applyLearnedRules();
   rebuildAll();
 }
