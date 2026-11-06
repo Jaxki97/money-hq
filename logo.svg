@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="Helpmebudget">
+  <rect width="96" height="96" rx="22" fill="#221E17"/>
+  <circle cx="48" cy="48" r="26" fill="none" stroke="#D9713A" stroke-width="6"/>
+  <text x="48" y="62" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="700" fill="#F1E9D8">$</text>
+</svg>

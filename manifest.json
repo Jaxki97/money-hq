@@ -1,6 +1,6 @@
 {
-  "name": "Money HQ",
-  "short_name": "Money HQ",
+  "name": "Helpmebudget",
+  "short_name": "Helpmebudget",
   "description": "Paycheque buckets, spending dashboard, and account tracking",
   "start_url": "./index.html",
   "display": "standalone",
