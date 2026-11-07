@@ -6,14 +6,16 @@
 // cached entry. Bump it when that guarantee isn't enough:
 //   - purging something that must not survive (leaked or sensitive content)
 //   - a deleted/renamed file, whose orphaned cache entry is never overwritten
-const CACHE_NAME = 'money-hq-v6';
+const CACHE_NAME = 'money-hq-v7';
 
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './storage-shim.js',
-  './logo.svg'
+  './logo.svg',
+  './chart.umd.min.js',
+  './papaparse.min.js'
 ];
 
 self.addEventListener('install', (event) => {
