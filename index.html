@@ -221,6 +221,7 @@
 /* =========================================================
    SHARED HELPERS
    ========================================================= */
+window.APP_BUILD = 'v8';
 function fmt(n){ const s = n<0 ? '-' : ''; return s + '$' + Math.round(Math.abs(n)).toLocaleString(); }
 function fmtCents(n){ return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 const MONTH_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -960,6 +961,7 @@ async function renderStorageDiag(){
   const pays = (typeof payHistory !== 'undefined') ? payHistory.length : 0;
   el.innerHTML =
     `<div style="color:var(--text);font-weight:500;margin-bottom:4px;">Storage status</div>` +
+    `<div>Build: ${window.APP_BUILD || '?'}</div>` +
     `<div>Engine: ${STORAGE_ENGINE}</div>` +
     `<div>localStorage: ${lsCount} keys (${(lsBytes/1024).toFixed(1)} KB)</div>` +
     `<div>IndexedDB: ${idbCount} rows</div>` +
@@ -983,7 +985,11 @@ function buildAccountsSection(){
       </div>
       <p class="status-msg" id="exportBackupMsg"></p>
       <div id="storageDiag" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px;font-family:var(--font-mono);font-size:12px;color:var(--label);line-height:1.6;"></div>
-      <button class="ghost-btn" id="refreshDiagBtn" style="margin-top:10px;padding:5px 12px;font-size:11px;">Refresh storage status</button>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="ghost-btn" id="refreshDiagBtn" style="padding:5px 12px;font-size:11px;">Refresh storage status</button>
+        <button class="ghost-btn" id="refreshAppBtn" style="padding:5px 12px;font-size:11px;">Refresh app &amp; clear cache</button>
+      </div>
+      <p class="card-note" style="font-size:11px;margin-top:6px;">Use <strong>Refresh app</strong> if a tab won't open or you're stuck on an old version — it reloads the latest app and keeps your data.</p>
     </div>
     <div class="card">
       <h2>Your accounts</h2>
@@ -1005,6 +1011,11 @@ function buildAccountsSection(){
   renderStorageDiag();
   const refreshDiagBtn = document.getElementById('refreshDiagBtn');
   if (refreshDiagBtn) refreshDiagBtn.addEventListener('click', renderStorageDiag);
+  const refreshAppBtn = document.getElementById('refreshAppBtn');
+  if (refreshAppBtn) refreshAppBtn.addEventListener('click', () => {
+    refreshAppBtn.textContent = 'Refreshing…';
+    refreshAppCache();
+  });
 
   document.getElementById('exportBackupBtn').addEventListener('click', () => {
     const msgEl = document.getElementById('exportBackupMsg');
@@ -1990,13 +2001,46 @@ let builtSections = new Set();
 
 function activateTab(id){
   if (!builtSections.has(id)){
-    if (id==='overview') buildOverview();
-    else if (id==='buckets') buildBucketsSection();
-    else if (id==='history') buildHistoryTabSection();
-    else if (id==='accounts') buildAccountsSection();
+    try {
+      if (id==='overview') buildOverview();
+      else if (id==='buckets') buildBucketsSection();
+      else if (id==='history') buildHistoryTabSection();
+      else if (id==='accounts') buildAccountsSection();
+    } catch(e){
+      // Don't let a render error swallow the whole tab — open it and show why.
+      let sec = document.querySelector('[data-section="'+id+'"]');
+      if (!sec){ sec = document.createElement('div'); sec.className = 'section'; sec.dataset.section = id; sectionsEl.appendChild(sec); }
+      const chartMissing = (typeof Chart === 'undefined');
+      const detail = String((e && (e.stack || e.message)) || e).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+      sec.innerHTML =
+        '<div class="card">' +
+        '<h2>This tab hit an error</h2>' +
+        (chartMissing
+          ? '<p class="card-note">The chart library didn\'t load — this app is serving an old cached version. Tap <strong>Refresh app</strong> on the Accounts tab to clear it.</p>'
+          : '<p class="card-note">Something went wrong rendering this tab.</p>') +
+        '<p class="card-note">Build: ' + (window.APP_BUILD || '?') + ' · Chart loaded: ' + (chartMissing ? 'no' : 'yes') + '</p>' +
+        '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;color:var(--red);background:var(--panel-2);padding:10px;border-radius:8px;">' + detail + '</pre>' +
+        '</div>';
+    }
     builtSections.add(id);
   }
   showTab(id);
+}
+
+async function refreshAppCache(){
+  try {
+    if ('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { try { await r.unregister(); } catch(e){} }
+    }
+  } catch(e){}
+  try {
+    if (window.caches && caches.keys){
+      const names = await caches.keys();
+      for (const n of names) { try { await caches.delete(n); } catch(e){} }
+    }
+  } catch(e){}
+  location.replace('./index.html?fresh=' + Date.now());
 }
 
 function buildTabs(){
