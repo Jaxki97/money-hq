@@ -226,8 +226,8 @@ function fmt(n){ const s = n<0 ? '-' : ''; return s + '$' + Math.round(Math.abs(
 function fmtCents(n){ return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 const MONTH_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function monthLabel(m){ const [y,mm] = m.split('-'); return MONTH_LONG[parseInt(mm,10)-1] + ' ' + y; }
-function monthShort(m){ const [y,mm] = m.split('-'); return MONTH_SHORT[parseInt(mm,10)-1]; }
+function monthLabel(m){ if (typeof m !== 'string' || m.indexOf('-') < 0) return String(m == null ? '' : m); const [y,mm] = m.split('-'); return (MONTH_LONG[parseInt(mm,10)-1] || '') + ' ' + y; }
+function monthShort(m){ if (typeof m !== 'string' || m.indexOf('-') < 0) return String(m == null ? '' : m); const [y,mm] = m.split('-'); return MONTH_SHORT[parseInt(mm,10)-1] || ''; }
 
 const tabsEl = document.getElementById('tabs');
 const sectionsEl = document.getElementById('sections');
@@ -1653,9 +1653,15 @@ function mergeTxnsIntoState(records, dedupe){
   const affectedMonths = new Set();
   records.forEach(r => {
     if (dedupe && existingIds.has(r.id)) return;
-    if (!TXNS[r.month]) { TXNS[r.month] = []; }
-    TXNS[r.month].push(r);
-    affectedMonths.add(r.month);
+    // Records from the original baked dataset carry no `month` field — derive it
+    // from the date so rebuilding MONTHS never yields undefined (which crashed
+    // the Overview on reload). Skip anything with no usable month.
+    const mo = r.month || (typeof r.date === 'string' ? r.date.slice(0,7) : '');
+    if (!/^\d{4}-\d{2}$/.test(mo)) return;
+    r.month = mo;
+    if (!TXNS[mo]) { TXNS[mo] = []; }
+    TXNS[mo].push(r);
+    affectedMonths.add(mo);
     existingIds.add(r.id);
   });
   affectedMonths.forEach(m => {
