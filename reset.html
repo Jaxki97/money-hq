@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Updating Helpmebudget…</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F1E9D8;color:#221E17;margin:0;padding:48px 24px;line-height:1.5;}
+  .wrap{max-width:440px;margin:0 auto;}
+  h1{font-family:Georgia,serif;font-weight:400;font-size:26px;margin:0 0 12px;}
+  p{color:#5f5a50;font-size:15px;}
+  .ok{color:#6B8F63;font-weight:600;}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:13px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Updating Helpmebudget</h1>
+  <p id="status">Clearing the old cached version…</p>
+  <p style="font-size:13px;color:#8C8171;margin-top:24px;">This removes the stale app cache only. Your saved data (buckets, transactions, goals) is <strong>not</strong> touched.</p>
+</div>
+<script>
+(function(){
+  var statusEl = document.getElementById('status');
+  function setStatus(m){ if (statusEl) statusEl.textContent = m; }
+  function go(){ location.replace('./index.html?fresh=' + Date.now()); }
+
+  (async function(){
+    var cleared = { sw: 0, caches: 0 };
+    try {
+      if ('serviceWorker' in navigator){
+        var regs = await navigator.serviceWorker.getRegistrations();
+        for (var i = 0; i < regs.length; i++){ try { await regs[i].unregister(); cleared.sw++; } catch(e){} }
+      }
+    } catch(e){}
+    try {
+      if (window.caches && caches.keys){
+        var names = await caches.keys();
+        for (var j = 0; j < names.length; j++){ try { await caches.delete(names[j]); cleared.caches++; } catch(e){} }
+      }
+    } catch(e){}
+    setStatus('Cleared ' + cleared.sw + ' old worker(s) and ' + cleared.caches + ' cache(s). Loading the latest version…');
+    setTimeout(go, 900);
+  })();
+})();
+</script>
+</body>
+</html>
