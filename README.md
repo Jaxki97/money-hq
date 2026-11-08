@@ -1,77 +1,76 @@
-# Money HQ — PWA version
+# Helpmebudget — personal budgeting PWA
 
-This is the standalone version of Money HQ, converted from the Claude artifact
-to run entirely in your browser using **IndexedDB** for storage instead of
-Claude's storage API. Nothing here depends on Anthropic's servers — once it's
-loaded once, it works fully offline.
+A standalone budgeting app that runs entirely in your browser. No servers, no
+accounts, no cloud — all data lives in your own browser storage. Once loaded,
+it works fully offline.
 
-## What's different from the Claude version
+- **Live:** https://jaxki97.github.io/money-hq/
+- **Repo:** https://github.com/Jaxki97/money-hq (public — ships with **no**
+  financial data; see "Privacy" below)
+- **Main device:** Mac mini, installed as a Safari "Add to Dock" web app.
 
-- **Storage**: all your data (buckets, paycheque history, transactions,
-  accounts, learned categorization rules) is saved in IndexedDB, a real
-  database built into your browser. It survives closing the tab, restarting
-  your Mac, everything short of you explicitly clearing browser data for
-  this site.
-- **Installable**: this is a PWA (Progressive Web App) — you can "Add to
-  Dock" / "Install app" from your browser, and it opens like a normal app
-  window with its own icon, no browser chrome.
-- **Offline-capable**: a service worker caches the app shell so it loads
-  even without internet after the first visit.
-- **Backup/restore**: the Accounts tab has a "Backup your data" card —
-  download a full JSON snapshot any time, and restore from it on any device
-  or browser. Do this occasionally, especially before clearing browser data
-  or switching computers.
+## What it does
 
-## Deploying to GitHub Pages (same pattern as your training log)
+- **Overview** — charts and monthly category breakdowns from imported
+  transactions (CSV import via PapaParse).
+- **Buckets** — fixed vs flexible expenses for the pay period, with a
+  "This pay period" card and an info tooltip on the take-home field.
+- **Savings goals** — manual contributions tracked against a target, shown as
+  a filling progress bar ("🎯 Target achieved" when reached).
+- **History** — logged paycheque splits (separate from imported transactions).
+- **Accounts** — backup/restore, storage diagnostics, and app-refresh controls.
 
-1. Create a new GitHub repo (e.g. `money-hq`), or a folder inside an
-   existing one.
-2. Copy these 6 files into it:
-   - `index.html`
-   - `storage-shim.js`
-   - `manifest.json`
-   - `sw.js`
-   - `icon-192.png`
-   - `icon-512.png`
-3. Push to GitHub.
-4. In the repo settings → Pages, set the source to your main branch
-   (root folder), same as `jaxki97.github.io/My-Training-Log`.
-5. Visit `https://jaxki97.github.io/money-hq/` (or whatever repo name you
-   used) — it should load, and your browser will offer to install it.
+## Storage & durability
 
-## First-time setup after deploying
+All data (buckets, paycheque history, transactions, accounts, learned
+categorization rules, savings goals) is saved **twice** — to IndexedDB **and**
+mirrored to localStorage — because Safari web apps were evicting IndexedDB
+between launches. Reads fall back between the two stores. The app also calls
+`navigator.storage.persist()` to request eviction protection.
 
-Your Claude artifact's data does **not** automatically transfer — it lived
-in Claude's storage, this version uses your browser's storage instead.
-Two ways to get your data in:
+**Still back up occasionally.** Accounts → "Backup your data" downloads a full
+JSON snapshot. Do it after a big CSV import or before clearing browser data.
+This is the only copy that survives clearing site data or switching devices.
 
-**Option A — start fresh**: just use it normally from today. Nothing
-carries over, but nothing's broken either — same defaults as when the
-Claude version first launched.
+## If the app looks stale or a tab won't open
 
-**Option B — bring your data over** (recommended, since you've already
-logged real paycheques and uploaded real CSVs):
-1. In the **Claude artifact**, go to Accounts → "Download full backup
-   (.json)"
-2. Open the **new PWA version** (this one)
-3. Go to Accounts → click "Restore from backup" → select that file
-4. Everything — buckets, history, transactions, accounts, learned rules —
-   loads in
+Safari can pin an old cached version. Fix, easiest first:
 
-## Ongoing safety habit
+1. In the app: **Accounts → "Refresh app & clear cache"**.
+2. Visit **https://jaxki97.github.io/money-hq/reset.html** — clears the stale
+   service worker and cache **without touching your data**, then reloads.
+3. Last resort: Safari → Settings → Privacy → Manage Website Data → remove
+   `jaxki97.github.io`, then quit and reopen Safari. (Your data survives if
+   you've kept a backup; this step can clear it, so back up first.)
 
-Since this now lives only on your device (no cloud backup from Anthropic
-to fall back on), it's worth downloading a backup every so often —
-especially after a big CSV upload or before doing anything that clears
-browser storage. The file is small (plain JSON) and easy to keep in
-whatever folder you already use for financial records.
+The Accounts tab shows a storage diagnostic (build version, which stores hold
+data, whether persistence was granted, and how many records loaded).
 
-## Files in this package
+## Privacy
+
+The public repo ships **empty** — no real transactions, names, or employers.
+Real data only ever lives in your browser and in backup JSON files you keep
+locally. Backups, private data exports, and CSVs are gitignored so they can't
+be committed by accident. **Never commit a file containing real financial
+data.**
+
+## Files
 
 | File | Purpose |
 |---|---|
-| `index.html` | The app itself |
-| `storage-shim.js` | IndexedDB-backed replacement for Claude's storage API |
+| `index.html` | The whole app |
+| `storage-shim.js` | Dual-store (IndexedDB + localStorage) persistence layer |
+| `sw.js` | Service worker — network-first, offline fallback, cache versioning |
+| `reset.html` | Clears a stale worker/cache without touching data |
 | `manifest.json` | PWA metadata (name, icons, colors) |
-| `sw.js` | Service worker — enables offline use and installability |
-| `icon-192.png`, `icon-512.png` | App icons (placeholders — swap for your own anytime) |
+| `logo.svg` | Coin logo (tab icon / favicon) |
+| `icon-192.png`, `icon-512.png` | PWA install icons |
+| `chart.umd.min.js` | Self-hosted Chart.js (no CDN) |
+| `papaparse.min.js` | Self-hosted PapaParse CSV parser (no CDN) |
+
+## Deploying
+
+Already deployed via GitHub Pages (main branch, root). To update: edit, commit,
+push to `main` — Pages redeploys automatically. For changes that must purge the
+old cache (renamed/deleted files, or anything sensitive), bump `CACHE_NAME` in
+`sw.js`. See `CLAUDE.md` for the full technical context and gotchas.
