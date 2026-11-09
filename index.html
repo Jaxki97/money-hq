@@ -1602,6 +1602,9 @@ function categorizeTxn(desc, debit, credit){
   if (d.includes('ICICI')) return 'ICICI (excluded)';
   if (personalRules.employers.some(n=>n && d.includes(n))) return 'Paycheque';
   if (d.includes('TAX REFUND') || d.includes('IMPÔT')) return 'Tax refund';
+  // Uber rides and Uber Eats are deliberately NOT split: CIBC exports truncate
+  // the descriptor (e.g. "UBER CANADA/UBE"), so food and transport can't be told
+  // apart. Kept as a single Uber category until an export distinguishes them.
   if (d.includes('UBER')) return 'Uber';
   if (d.includes('FIT4LESS') || d.includes('GOODLIFE')) return 'Subscriptions';
   if (d.includes('APPLE.COM')) return 'Subscriptions';
@@ -1617,7 +1620,11 @@ function categorizeTxn(desc, debit, credit){
   if (d.includes('CANNABIS')||d.includes('CANNA CABANA')||d.includes('LCBO')||d.includes('TAVERN')||d.includes('SCOOPS')||d.includes('CINEMAS')||d.includes('OXYGE')) return 'Discretionary (dining/leisure)';
   if (d.includes('REMITLY')) return 'Remitly (excluded)';
   if (d.includes('CPA PROF CORP')) return 'CPA fee';
-  if (d.includes('ESSO')||d.includes('CIRCLE K')||d.includes('PETRO-CANADA')||d.includes('SHELL')) return 'Gas station';
+  // Groceries — checked BEFORE gas so a warehouse fuel purchase isn't read as gas.
+  // Costco stays Groceries even for its gas bar, because CIBC descriptions don't
+  // reliably separate Costco gas from Costco groceries.
+  if (d.includes('NO FRILLS')||d.includes('NOFRILLS')||d.includes('FRESHCO')||d.includes('FOOD BASICS')||d.includes('ZEHRS')||d.includes('SOBEYS')||d.includes('METRO')||d.includes('LOBLAWS')||d.includes('REAL CANADIAN SUPERSTORE')||d.includes('SUPERSTORE')||d.includes('WALMART')||d.includes('COSTCO')||d.includes('FARM BOY')||d.includes('FARMBOY')||d.includes('T&T')||d.includes('FORTINOS')||d.includes('VALU-MART')||d.includes('VALU MART')||d.includes('VALUMART')||d.includes('LONGOS')||d.includes("LONGO'S")||d.includes('GIANT TIGER')) return 'Groceries';
+  if (d.includes('ESSO')||d.includes('CIRCLE K')||d.includes('PETRO-CANADA')||d.includes('PETRO CANADA')||d.includes('SHELL')||d.includes('PIONEER')||d.includes('MOBIL')||d.includes('ULTRAMAR')||d.includes('HUSKY')||d.includes('CANADIAN TIRE GAS')||d.includes('CDN TIRE GAS')) return 'Gas station';
   if (d.includes('TEMU')) return 'Online retail';
   if (isTransferish && who && personalRules.selfNames.some(n=>n && who.includes(n))) return 'Transfer to/from my accounts';
   if (isTransferish) return 'Unclassified transfers';
@@ -1685,7 +1692,7 @@ function applyLearnedRules(){
 
 const CAT_GROUPS = {
   netRent: ['Rent (to landlord)','Roommate reimbursement'],
-  uber: ['Uber'], insurance: ['Insurance'], utilities: ['Utilities'],
+  uber: ['Uber'], groceries: ['Groceries'], insurance: ['Insurance'], utilities: ['Utilities'],
   subs: ['Subscriptions'], bnpl: ['BNPL'], cc: ['Credit card payment'],
   fees: ['Bank fees','ATM/fees'], discretionary: ['Discretionary (dining/leisure)','Gas station'],
   otherUncat: ['Other/uncategorized','CPA fee'], blindSpot: ['Unclassified transfers'],
@@ -1745,9 +1752,10 @@ function groupTotals(monthObj){
   g.income = -g.income;
   return g;
 }
-const spendKeys = ['netRent','uber','insurance','utilities','subs','bnpl','cc','fees','discretionary','otherUncat','blindSpot'];
+const spendKeys = ['netRent','uber','groceries','insurance','utilities','subs','bnpl','cc','fees','discretionary','otherUncat','blindSpot'];
 const catSeriesDef = [
   {key:'netRent', label:'Net rent', color:'#5C7A99'}, {key:'uber', label:'Uber', color:'#D9713A'},
+  {key:'groceries', label:'Groceries', color:'#3FA7A0'},
   {key:'insurance', label:'Insurance', color:'#9B7B93'}, {key:'utilities', label:'Utilities', color:'#6B8F63'},
   {key:'subs', label:'Subscriptions', color:'#B98089'}, {key:'bnpl', label:'BNPL', color:'#C1553B'},
   {key:'cc', label:'Credit card pmt', color:'#8C8171'}, {key:'fees', label:'Fees', color:'#8A6D3B'},
@@ -1821,10 +1829,21 @@ function mergeTxnsIntoState(records, dedupe){
 function parseCsvText(text, accountName){
   const parsed = Papa.parse(text.trim(), { skipEmptyLines:true });
   const records = [];
+  const skippedSamples = [];
+  let skippedCount = 0;
+  // Per-file occurrence counter: two genuinely identical purchases on the same
+  // day hash to the same base id, so the second would be treated as a duplicate.
+  // Suffix repeats within THIS file (#2, #3, …) so real repeats survive, while
+  // the first occurrence keeps the bare id — so re-uploading the same file still
+  // dedupes against already-stored (unsuffixed) transactions.
+  const seen = {};
   parsed.data.forEach(row => {
-    if (row.length < 4) return;
     const date = (row[0]||'').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    if (row.length < 4 || !/^\d{4}-\d{2}-\d{2}$/.test(date)){
+      skippedCount++;
+      if (skippedSamples.length < 3) skippedSamples.push(row.join(', ').slice(0,120));
+      return;
+    }
     const desc = (row[1]||'').trim();
     const debit = parseFloat(row[2]) || 0;
     const credit = parseFloat(row[3]) || 0;
@@ -1832,9 +1851,12 @@ function parseCsvText(text, accountName){
     const amount = Math.round((debit - credit) * 100) / 100;
     const cleaned = cleanDesc(desc);
     const account = accountName || 'Unknown account';
-    records.push({ date, month: date.slice(0,7), desc: cleaned, category, amount, account, id: txnHash(date, cleaned, amount, account) });
+    const baseId = txnHash(date, cleaned, amount, account);
+    const n = (seen[baseId] = (seen[baseId] || 0) + 1);
+    const id = n === 1 ? baseId : baseId + '#' + n;
+    records.push({ date, month: date.slice(0,7), desc: cleaned, category, amount, account, id });
   });
-  return records;
+  return { records, skippedCount, skippedSamples };
 }
 
 function destroyCharts(){
@@ -2006,21 +2028,33 @@ function wireCsvUpload(container, accountName){
       const text = reader.result;
       const existingIds = new Set();
       MONTHS.forEach(m => TXNS[m].forEach(t => existingIds.add(t.id)));
-      const records = parseCsvText(text, accountName);
+      const { records, skippedCount, skippedSamples } = parseCsvText(text, accountName);
+
+      const skippedNote = skippedCount > 0
+        ? `<div class="kpi-sub" style="margin-top:8px;color:var(--amber);">${skippedCount} row${skippedCount>1?'s':''} couldn't be read (unrecognised format).${skippedSamples.length ? ' First: ' + skippedSamples.map(s=>escapeHtml(s)).join(' · ') : ''}</div>`
+        : '';
+
+      // Nothing parsed at all — the file's format isn't one we understand yet.
+      if (!records.length){
+        previewArea.innerHTML = `<div class="status-msg">Couldn't read any transactions from this ${escapeHtml(accountName)} file — its format isn't supported yet.${skippedCount ? ` ${skippedCount} row${skippedCount>1?'s were':' was'} in an unrecognised format.` : ''}${skippedSamples.length ? '<br>First: ' + escapeHtml(skippedSamples[0]) : ''}</div>`;
+        return;
+      }
+
       const newOnes = records.filter(r => !existingIds.has(r.id));
       const dupCount = records.length - newOnes.length;
       pendingRecords = newOnes;
 
       if (!newOnes.length){
-        previewArea.innerHTML = `<div class="status-msg">Parsed ${records.length} rows from ${accountName}, all ${dupCount} already in the dashboard — nothing new to add.</div>`;
+        previewArea.innerHTML = `<div class="status-msg">Parsed ${records.length} rows from ${escapeHtml(accountName)}, all ${dupCount} already in the dashboard — nothing new to add.${skippedNote}</div>`;
         return;
       }
       const dates = newOnes.map(r=>r.date).sort();
       previewArea.innerHTML = `
         <div class="preview-summary">
           <div>
-            <div><span class="stat">${newOnes.length}</span> new transactions from <span class="stat">${accountName}</span>${dupCount ? ` (${dupCount} duplicates skipped)` : ''}</div>
+            <div><span class="stat">${newOnes.length}</span> new transactions from <span class="stat">${escapeHtml(accountName)}</span>${dupCount ? ` (${dupCount} duplicates skipped)` : ''}</div>
             <div class="kpi-sub">${dates[0]} → ${dates[dates.length-1]}</div>
+            ${skippedNote}
           </div>
           <div style="display:flex;gap:10px;">
             <button class="ghost-btn" id="cancelMergeBtn">Cancel</button>
