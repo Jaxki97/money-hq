@@ -252,7 +252,7 @@ const DEFAULTS = [
   {key:'spend', name:'Spend', tag:'Chequing', pct:25.1, color:'#F2A93B', target:0, hasTarget:false}
 ];
 const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, monthly: 12 };
-const FREQ_LABEL = { weekly: 'Standard weekly pay', biweekly: 'Standard biweekly pay', monthly: 'Standard monthly pay' };
+const FREQ_LABEL = { weekly: 'Standard weekly pay (take-home)', biweekly: 'Standard biweekly pay (take-home)', monthly: 'Standard monthly pay (take-home)' };
 
 let channels = JSON.parse(JSON.stringify(DEFAULTS));
 let standardPay = 0;
@@ -374,6 +374,11 @@ function recalculate(){
   });
   updatePayNote();
   renderBuckets();
+  setPayAmtPlaceholder();
+  updateStdPayLine();
+  updateRecalcPrompt();
+  refreshAffordability();
+  persistStandardPay();
 }
 
 const VOLATILITY = {
@@ -550,9 +555,13 @@ function buildChannelsDOM(){
 }
 
 function updateBucketValues(){
+  // When the pay field is empty, fall back to standard pay as the basis so the
+  // bucket dollar amounts still reflect a standard paycheque (and so a change to
+  // standard pay updates them live). An entered amount overrides it for this cycle.
   const net = parseFloat(document.getElementById('payAmt').value) || 0;
+  const basis = net > 0 ? net : standardPay;
   channels.forEach((ch, i) => {
-    const amt = net * ch.pct / 100;
+    const amt = basis * ch.pct / 100;
     const slider = document.querySelector('input[type=range][data-idx="'+i+'"]');
     if (slider && document.activeElement !== slider) slider.value = ch.pct;
     const pctEl = document.getElementById('pct-'+i);
@@ -562,7 +571,7 @@ function updateBucketValues(){
   });
 
   const total = channels.reduce((s,c)=>s+c.pct,0);
-  const totalAmt = channels.reduce((s,c)=>s + (net*c.pct/100), 0);
+  const totalAmt = channels.reduce((s,c)=>s + (basis*c.pct/100), 0);
   const balanced = Math.abs(total-100) < 0.05;
 
   const totalEl = document.getElementById('totalPct');
@@ -663,6 +672,87 @@ function renderPayFixedSummary(){
     </div>`;
 }
 
+// --- Standard pay: edit, persist, keep everything in sync ---------------------
+// Standard pay must stick the moment it's changed, not only when a paycheque is
+// logged. These helpers persist it, flash a "Saved" chip, and refresh every piece
+// of UI that derives from it.
+let stdPaySaveTimer = null;
+async function persistStandardPay(){
+  if (!(standardPay > 0)) return;
+  try{ await window.storage.set('pct-router-standardpay', String(standardPay)); showStdPaySaved(); }
+  catch(e){ console.error('standard pay persist failed', e); }
+}
+function showStdPaySaved(){
+  const chip = document.getElementById('stdPaySaved');
+  if (!chip) return;
+  chip.style.display = '';
+  clearTimeout(chip._t);
+  chip._t = setTimeout(() => { chip.style.display = 'none'; }, 1600);
+}
+function setPayAmtPlaceholder(){
+  const el = document.getElementById('payAmt');
+  if (el) el.placeholder = standardPay > 0 ? standardPay.toFixed(2) : '0.00';
+}
+function updateStdPayLine(){
+  const el = document.getElementById('stdPayLine');
+  if (!el) return;
+  const freqWord = {weekly:'week', biweekly:'2 weeks', monthly:'month'}[frequency];
+  el.innerHTML = `Standard pay: <strong>${standardPay > 0 ? fmtCents(standardPay) : 'not set'}</strong> / ${freqWord} · <a href="#" id="editStdPayLink">edit</a>`;
+  const link = document.getElementById('editStdPayLink');
+  if (link) link.onclick = (e) => {
+    e.preventDefault();
+    const d = document.getElementById('settingsDetails');
+    if (d) d.open = true;
+    const f = document.getElementById('setStdPay');
+    if (f){ f.focus(); f.select(); f.scrollIntoView({block:'center'}); }
+  };
+}
+function refreshAffordability(){
+  if (document.getElementById('affordRecurringAmt')) renderAffordRecurring();
+  if (document.getElementById('affordOnetimeAmt')) renderAffordOnetime();
+}
+// Show a non-destructive prompt when a fixed-target bucket's implied percentage
+// (target ÷ standard pay) has drifted from its current slider percentage. Only
+// buckets with a real target (> 0) count. The button runs the existing
+// recalculate(); percentages never change on their own.
+function updateRecalcPrompt(){
+  const el = document.getElementById('payRecalcPrompt');
+  if (!el) return;
+  const periods = PERIODS_PER_YEAR[frequency];
+  let mismatch = false;
+  if (standardPay > 0){
+    channels.filter(c => c.hasTarget && c.target > 0).forEach(c => {
+      const implied = Math.round((c.target * 12 / periods / standardPay * 100) * 10) / 10;
+      if (Math.abs(implied - c.pct) > 0.1) mismatch = true;
+    });
+  }
+  if (!mismatch){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="buffer-note" style="background:#2E2416;border-color:#6B5527;color:#F2C98A;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <span>Your standard pay changed. Bucket percentages no longer match your targets.</span>
+      <button class="ghost-btn" id="recalcFromPromptBtn" style="flex:0 0 auto;">Recalculate percentages from targets?</button>
+    </div>`;
+  const btn = document.getElementById('recalcFromPromptBtn');
+  if (btn) btn.onclick = () => recalculate();
+}
+// Called on every standard-pay edit. Updates memory + all dependent UI, and
+// persists (debounced while typing, immediately on blur/enter). Empty, zero or
+// negative input refreshes nothing destructive and never overwrites the saved value.
+function onStdPayInput(raw, opts){
+  const val = parseFloat(raw);
+  if (!(val > 0)) return;
+  standardPay = val;
+  setPayAmtPlaceholder();
+  updateStdPayLine();
+  updatePayNote();
+  updateBucketValues();
+  updateRecalcPrompt();
+  refreshAffordability();
+  renderHero();
+  if (opts && opts.persist){ persistStandardPay(); }
+  else { clearTimeout(stdPaySaveTimer); stdPaySaveTimer = setTimeout(persistStandardPay, 600); }
+}
+
 // Manual savings goals: user-created targets (e.g. a car) funded by explicit
 // contributions. Independent of paycheque logging; persisted under its own key
 // and included in backups.
@@ -751,7 +841,10 @@ function buildBucketsSection(){
         </div>
         <div class="channel" style="padding-top:0;">
           <div class="ch-top"><div class="ch-name" id="stdPayLabel">Standard pay per period</div>
-            <input class="ch-amt" id="setStdPay" type="number" step="10" style="width:110px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--amber);text-align:right;padding:6px 8px;">
+            <span style="display:flex;align-items:center;gap:8px;">
+              <span id="stdPaySaved" style="display:none;color:var(--teal);font-size:12px;white-space:nowrap;">Saved ✓</span>
+              <input class="ch-amt" id="setStdPay" type="number" step="10" min="0" style="width:110px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--amber);text-align:right;padding:6px 8px;">
+            </span>
           </div>
         </div>
         <div id="targetInputs"></div>
@@ -762,8 +855,10 @@ function buildBucketsSection(){
 
       <div class="card">
         <p class="card-title">This pay period<span class="info" tabindex="0" role="button" aria-label="Enter the amount you received this pay cycle, after taxes and all other deductions.">i<span class="info-pop">Enter the amount you received this pay cycle, after taxes and all other deductions — your actual take-home, not your gross.</span></span></p>
-        <div class="pay-input"><span>$</span><input type="number" id="payAmt" placeholder="1024.00" step="0.01" min="0"></div>
+        <p class="card-note" id="stdPayLine" style="margin:0 0 10px;"></p>
+        <div class="pay-input"><span>$</span><input type="number" id="payAmt" step="0.01" min="0"></div>
         <p class="card-note" style="margin-top:10px;" id="payNote"></p>
+        <div id="payRecalcPrompt" style="display:none;margin-top:10px;"></div>
         <div id="payFixedSummary"></div>
       </div>
 
@@ -805,10 +900,8 @@ function buildBucketsSection(){
 
   document.querySelectorAll('.freq-btn').forEach(b => b.addEventListener('click', () => setFrequency(b.dataset.freq)));
   document.getElementById('recalcBtn').addEventListener('click', recalculate);
-  document.getElementById('setStdPay').addEventListener('input', e => {
-    standardPay = parseFloat(e.target.value) || standardPay;
-    updatePayNote();
-  });
+  document.getElementById('setStdPay').addEventListener('input', e => onStdPayInput(e.target.value, {persist:false}));
+  document.getElementById('setStdPay').addEventListener('change', e => onStdPayInput(e.target.value, {persist:true}));
   document.getElementById('payAmt').addEventListener('input', updateBucketValues);
 
   document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -853,18 +946,23 @@ function buildBucketsSection(){
   });
 
   document.getElementById('resetBtn').addEventListener('click', () => {
+    // Reset buckets only. Keep the user's saved standard pay and frequency.
     channels = JSON.parse(JSON.stringify(DEFAULTS));
-    standardPay = 1024;
-    setFrequency('weekly');
-    document.getElementById('setStdPay').value = standardPay;
+    document.getElementById('setStdPay').value = standardPay > 0 ? standardPay : '';
     renderTargetInputs();
     renderBuckets();
+    setPayAmtPlaceholder();
+    updateStdPayLine();
+    updateRecalcPrompt();
   });
 
   setFrequency(frequency);
-  document.getElementById('setStdPay').value = standardPay;
+  document.getElementById('setStdPay').value = standardPay > 0 ? standardPay : '';
   renderTargetInputs();
   renderBuckets();
+  setPayAmtPlaceholder();
+  updateStdPayLine();
+  updateRecalcPrompt();
 
   renderSavingsGoals();
   const addGoalBtn = document.getElementById('addGoalBtn');
