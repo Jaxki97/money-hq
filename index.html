@@ -221,7 +221,7 @@
 /* =========================================================
    SHARED HELPERS
    ========================================================= */
-window.APP_BUILD = 'v9';
+window.APP_BUILD = 'v10';
 function fmt(n){ const s = n<0 ? '-' : ''; return s + '$' + Math.round(Math.abs(n)).toLocaleString(); }
 function fmtCents(n){ return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 const MONTH_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -1070,6 +1070,8 @@ function buildAccountsSection(){
       MONTHS = backup.months || MONTHS;
       TXNS = backup.transactions || TXNS;
 
+      await migrateOwnTransferCategory();
+
       await window.storage.set('pct-router-config', JSON.stringify(channels));
       await window.storage.set('pct-router-standardpay', String(standardPay));
       await window.storage.set('pct-router-frequency', frequency);
@@ -1519,7 +1521,7 @@ function categorizeTxn(desc, debit, credit){
   if (d.includes('CPA PROF CORP')) return 'CPA fee';
   if (d.includes('ESSO')||d.includes('CIRCLE K')||d.includes('PETRO-CANADA')||d.includes('SHELL')) return 'Gas station';
   if (d.includes('TEMU')) return 'Online retail';
-  if (isTransferish && who && personalRules.selfNames.some(n=>n && who.includes(n))) return 'Own-name transfer (excluded)';
+  if (isTransferish && who && personalRules.selfNames.some(n=>n && who.includes(n))) return 'Transfer to/from my accounts';
   if (isTransferish) return 'Unclassified transfers';
   return 'Other/uncategorized';
 }
@@ -1589,8 +1591,55 @@ const CAT_GROUPS = {
   subs: ['Subscriptions'], bnpl: ['BNPL'], cc: ['Credit card payment'],
   fees: ['Bank fees','ATM/fees'], discretionary: ['Discretionary (dining/leisure)','Gas station'],
   otherUncat: ['Other/uncategorized','CPA fee'], blindSpot: ['Unclassified transfers'],
+  ownTransfers: ['Transfer to/from my accounts'],
   income: ['Paycheque','Tax refund']
 };
+// Deliberately NOT added to spendKeys or income: transfers between your own
+// accounts are neither spending nor income, so they stay out of those totals to
+// avoid double-counting. They surface in their own Overview card instead.
+
+// Every category categorizeTxn can emit, plus the display-only ones. Used so the
+// per-transaction category picker always offers them — even a category that no
+// current transaction uses yet (e.g. moving one into "Transfer to/from my
+// accounts" by hand, or tagging the first Groceries purchase).
+const KNOWN_CATEGORIES = [
+  'Rent (to landlord)','Roommate reimbursement','Paycheque','Tax refund',
+  'Groceries','Uber','Subscriptions','Insurance','Utilities',
+  'Credit card payment','BNPL','ATM/fees','Bank fees',
+  'Discretionary (dining/leisure)','Gas station','Online retail','CPA fee',
+  'Transfer to/from my accounts','Unclassified transfers',
+  'ICICI (excluded)','Remitly (excluded)','Other/uncategorized'
+];
+const OWN_TRANSFER_CAT = 'Transfer to/from my accounts';
+const LEGACY_OWN_TRANSFER_CAT = 'Own-name transfer (excluded)';
+
+// One-time migration: rename the old excluded self-transfer category to the new
+// visible one across transactions, per-transaction overrides and learned rules,
+// then persist so it only does real work once. A no-op (no writes) once nothing
+// carries the legacy label.
+async function migrateOwnTransferCategory(){
+  let changed = false;
+  MONTHS.forEach(m => (TXNS[m]||[]).forEach(t => {
+    if (t.category === LEGACY_OWN_TRANSFER_CAT){ t.category = OWN_TRANSFER_CAT; changed = true; }
+  }));
+  Object.keys(overrides).forEach(id => {
+    if (overrides[id] && overrides[id].category === LEGACY_OWN_TRANSFER_CAT){
+      overrides[id].category = OWN_TRANSFER_CAT; changed = true;
+    }
+  });
+  Object.keys(learnedRules).forEach(sig => {
+    if (learnedRules[sig] === LEGACY_OWN_TRANSFER_CAT){ learnedRules[sig] = OWN_TRANSFER_CAT; changed = true; }
+  });
+  if (!changed) return;
+  MONTHS.forEach(m => recomputeMonthCategoryNet(m));
+  const flat = Object.values(TXNS).flat();
+  try{
+    await window.storage.set('dashboard-uploaded-all', JSON.stringify(flat));
+    await window.storage.set('dashboard-uploaded-txns', JSON.stringify(flat));
+    await saveOverrides();
+    await saveLearnedRules();
+  }catch(e){ console.error('own-transfer migration persist failed', e); }
+}
 function sumCat(monthObj, names){ let v=0; names.forEach(n=>{ if(monthObj[n]!==undefined) v+=monthObj[n]; }); return v; }
 function groupTotals(monthObj){
   const g = {};
@@ -1703,6 +1752,12 @@ function buildOverview(){
     <div class="kpi-row" id="kpiRow"></div>
     <div class="card"><h2>Income vs total spend, by month</h2><div class="chart-box"><canvas id="incomeChart"></canvas></div></div>
 
+    <div class="card" id="ownTransfersCard" style="display:none;">
+      <h2>Money moved to my accounts</h2>
+      <p class="card-note">Transfers between your own accounts — not spending and not income, so they're kept out of those totals. This is just how much moved, and where.</p>
+      <div id="ownTransfersBody"></div>
+    </div>
+
     <div class="card">
       <div class="card-header">
         <h2 style="margin:0;">Month deep-dive</h2>
@@ -1772,6 +1827,66 @@ function refreshOverviewContents(){
   const tableRows = catSeriesDef.map(s => [s.label, allTotals[s.key]]);
   document.getElementById('catTableBody').innerHTML = tableRows.sort((a,b)=>b[1]-a[1])
     .map(([name,t]) => `<tr><td>${name}</td><td class="num">${fmt(t)}</td><td class="num">${fmt(t/N_MONTHS)}</td></tr>`).join('');
+
+  renderOwnTransfers();
+}
+
+// "Money moved to my accounts" — summarises transactions categorised as
+// OWN_TRANSFER_CAT (respecting manual overrides). amount = debit − credit, so a
+// positive amount is money OUT to another of your accounts and a negative one is
+// money IN from it. Shows a per-month out/in/net table and a per-recipient
+// breakdown. The card hides itself when there are no such transactions.
+function renderOwnTransfers(){
+  const card = document.getElementById('ownTransfersCard');
+  const body = document.getElementById('ownTransfersBody');
+  if (!card || !body) return;
+
+  const byMonth = {};
+  const byWho = {};
+  let any = false;
+  MONTHS.forEach(m => {
+    (TXNS[m]||[]).forEach(t => {
+      if (getDisplayCategory(t) !== OWN_TRANSFER_CAT) return;
+      any = true;
+      const out = t.amount > 0 ? t.amount : 0;
+      const inn = t.amount < 0 ? -t.amount : 0;
+      if (!byMonth[m]) byMonth[m] = { out:0, in:0 };
+      byMonth[m].out += out; byMonth[m].in += inn;
+      const whoRaw = extractWho(t.desc);
+      const who = whoRaw && whoRaw.trim() ? whoRaw.trim() : (t.desc || 'Unlabelled');
+      if (!byWho[who]) byWho[who] = { out:0, in:0, count:0 };
+      byWho[who].out += out; byWho[who].in += inn; byWho[who].count++;
+    });
+  });
+
+  if (!any){ card.style.display = 'none'; body.innerHTML = ''; return; }
+  card.style.display = '';
+
+  const monthRows = MONTHS.filter(m => byMonth[m]).map(m => {
+    const r = byMonth[m];
+    const net = r.out - r.in;
+    return `<tr><td>${monthLabel(m)}</td><td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td><td class="num">${(net>=0?'+':'')}${fmt(net)}</td></tr>`;
+  }).join('');
+
+  const whoRows = Object.entries(byWho)
+    .sort((a,b) => (b[1].out+b[1].in) - (a[1].out+a[1].in))
+    .map(([who, r]) => `<tr><td>${escapeHtml(who)}</td><td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td><td class="num">${r.count}</td></tr>`)
+    .join('');
+
+  body.innerHTML = `
+    <div class="txn-table-wrap" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>Month</th><th class="num">Out</th><th class="num">In</th><th class="num">Net (out − in)</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+      </table>
+    </div>
+    <h2 style="font-size:16px;margin:18px 0 0;">By destination / recipient</h2>
+    <div class="txn-table-wrap" style="margin-top:10px;">
+      <table>
+        <thead><tr><th>Recipient</th><th class="num">Out</th><th class="num">In</th><th class="num">Count</th></tr></thead>
+        <tbody>${whoRows}</tbody>
+      </table>
+    </div>`;
 }
 
 function wireCsvUpload(container, accountName){
@@ -1852,7 +1967,11 @@ function renderMonthDetail(m){
   if (!container || !TXNS[m]) return;
   if (chartInstances['m-'+m]) { chartInstances['m-'+m].destroy(); delete chartInstances['m-'+m]; }
 
-  const allCategories = Array.from(new Set(Object.values(TXNS).flat().map(t => t.category))).sort();
+  const allCategories = Array.from(new Set([
+    ...KNOWN_CATEGORIES,
+    ...Object.values(TXNS).flat().map(t => t.category),
+    ...Object.values(overrides).map(o => o && o.category).filter(Boolean)
+  ])).sort();
   const g = groupTotals(CATNET[m]);
   const spend = spendKeys.reduce((a,k)=>a+g[k],0);
   const net = g.income - spend;
@@ -2103,6 +2222,7 @@ async function init(){
   await loadAccountChangeLog();
   await loadPersonalRules();
   await loadSavingsGoals();
+  await migrateOwnTransferCategory();
   applyLearnedRules();
   rebuildAll();
 }

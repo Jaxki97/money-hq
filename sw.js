@@ -6,7 +6,7 @@
 // cached entry. Bump it when that guarantee isn't enough:
 //   - purging something that must not survive (leaked or sensitive content)
 //   - a deleted/renamed file, whose orphaned cache entry is never overwritten
-const CACHE_NAME = 'money-hq-v9';
+const CACHE_NAME = 'money-hq-v10';
 
 const APP_SHELL = [
   './',
