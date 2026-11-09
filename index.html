@@ -221,7 +221,7 @@
 /* =========================================================
    SHARED HELPERS
    ========================================================= */
-window.APP_BUILD = 'v9';
+window.APP_BUILD = 'v10';
 function fmt(n){ const s = n<0 ? '-' : ''; return s + '$' + Math.round(Math.abs(n)).toLocaleString(); }
 function fmtCents(n){ return '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
 const MONTH_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -252,7 +252,7 @@ const DEFAULTS = [
   {key:'spend', name:'Spend', tag:'Chequing', pct:25.1, color:'#F2A93B', target:0, hasTarget:false}
 ];
 const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, monthly: 12 };
-const FREQ_LABEL = { weekly: 'Standard weekly pay', biweekly: 'Standard biweekly pay', monthly: 'Standard monthly pay' };
+const FREQ_LABEL = { weekly: 'Standard weekly pay (take-home)', biweekly: 'Standard biweekly pay (take-home)', monthly: 'Standard monthly pay (take-home)' };
 
 let channels = JSON.parse(JSON.stringify(DEFAULTS));
 let standardPay = 0;
@@ -374,6 +374,11 @@ function recalculate(){
   });
   updatePayNote();
   renderBuckets();
+  setPayAmtPlaceholder();
+  updateStdPayLine();
+  updateRecalcPrompt();
+  refreshAffordability();
+  persistStandardPay();
 }
 
 const VOLATILITY = {
@@ -550,9 +555,13 @@ function buildChannelsDOM(){
 }
 
 function updateBucketValues(){
+  // When the pay field is empty, fall back to standard pay as the basis so the
+  // bucket dollar amounts still reflect a standard paycheque (and so a change to
+  // standard pay updates them live). An entered amount overrides it for this cycle.
   const net = parseFloat(document.getElementById('payAmt').value) || 0;
+  const basis = net > 0 ? net : standardPay;
   channels.forEach((ch, i) => {
-    const amt = net * ch.pct / 100;
+    const amt = basis * ch.pct / 100;
     const slider = document.querySelector('input[type=range][data-idx="'+i+'"]');
     if (slider && document.activeElement !== slider) slider.value = ch.pct;
     const pctEl = document.getElementById('pct-'+i);
@@ -562,7 +571,7 @@ function updateBucketValues(){
   });
 
   const total = channels.reduce((s,c)=>s+c.pct,0);
-  const totalAmt = channels.reduce((s,c)=>s + (net*c.pct/100), 0);
+  const totalAmt = channels.reduce((s,c)=>s + (basis*c.pct/100), 0);
   const balanced = Math.abs(total-100) < 0.05;
 
   const totalEl = document.getElementById('totalPct');
@@ -663,6 +672,87 @@ function renderPayFixedSummary(){
     </div>`;
 }
 
+// --- Standard pay: edit, persist, keep everything in sync ---------------------
+// Standard pay must stick the moment it's changed, not only when a paycheque is
+// logged. These helpers persist it, flash a "Saved" chip, and refresh every piece
+// of UI that derives from it.
+let stdPaySaveTimer = null;
+async function persistStandardPay(){
+  if (!(standardPay > 0)) return;
+  try{ await window.storage.set('pct-router-standardpay', String(standardPay)); showStdPaySaved(); }
+  catch(e){ console.error('standard pay persist failed', e); }
+}
+function showStdPaySaved(){
+  const chip = document.getElementById('stdPaySaved');
+  if (!chip) return;
+  chip.style.display = '';
+  clearTimeout(chip._t);
+  chip._t = setTimeout(() => { chip.style.display = 'none'; }, 1600);
+}
+function setPayAmtPlaceholder(){
+  const el = document.getElementById('payAmt');
+  if (el) el.placeholder = standardPay > 0 ? standardPay.toFixed(2) : '0.00';
+}
+function updateStdPayLine(){
+  const el = document.getElementById('stdPayLine');
+  if (!el) return;
+  const freqWord = {weekly:'week', biweekly:'2 weeks', monthly:'month'}[frequency];
+  el.innerHTML = `Standard pay: <strong>${standardPay > 0 ? fmtCents(standardPay) : 'not set'}</strong> / ${freqWord} · <a href="#" id="editStdPayLink">edit</a>`;
+  const link = document.getElementById('editStdPayLink');
+  if (link) link.onclick = (e) => {
+    e.preventDefault();
+    const d = document.getElementById('settingsDetails');
+    if (d) d.open = true;
+    const f = document.getElementById('setStdPay');
+    if (f){ f.focus(); f.select(); f.scrollIntoView({block:'center'}); }
+  };
+}
+function refreshAffordability(){
+  if (document.getElementById('affordRecurringAmt')) renderAffordRecurring();
+  if (document.getElementById('affordOnetimeAmt')) renderAffordOnetime();
+}
+// Show a non-destructive prompt when a fixed-target bucket's implied percentage
+// (target ÷ standard pay) has drifted from its current slider percentage. Only
+// buckets with a real target (> 0) count. The button runs the existing
+// recalculate(); percentages never change on their own.
+function updateRecalcPrompt(){
+  const el = document.getElementById('payRecalcPrompt');
+  if (!el) return;
+  const periods = PERIODS_PER_YEAR[frequency];
+  let mismatch = false;
+  if (standardPay > 0){
+    channels.filter(c => c.hasTarget && c.target > 0).forEach(c => {
+      const implied = Math.round((c.target * 12 / periods / standardPay * 100) * 10) / 10;
+      if (Math.abs(implied - c.pct) > 0.1) mismatch = true;
+    });
+  }
+  if (!mismatch){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="buffer-note" style="background:#2E2416;border-color:#6B5527;color:#F2C98A;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <span>Your standard pay changed. Bucket percentages no longer match your targets.</span>
+      <button class="ghost-btn" id="recalcFromPromptBtn" style="flex:0 0 auto;">Recalculate percentages from targets?</button>
+    </div>`;
+  const btn = document.getElementById('recalcFromPromptBtn');
+  if (btn) btn.onclick = () => recalculate();
+}
+// Called on every standard-pay edit. Updates memory + all dependent UI, and
+// persists (debounced while typing, immediately on blur/enter). Empty, zero or
+// negative input refreshes nothing destructive and never overwrites the saved value.
+function onStdPayInput(raw, opts){
+  const val = parseFloat(raw);
+  if (!(val > 0)) return;
+  standardPay = val;
+  setPayAmtPlaceholder();
+  updateStdPayLine();
+  updatePayNote();
+  updateBucketValues();
+  updateRecalcPrompt();
+  refreshAffordability();
+  renderHero();
+  if (opts && opts.persist){ persistStandardPay(); }
+  else { clearTimeout(stdPaySaveTimer); stdPaySaveTimer = setTimeout(persistStandardPay, 600); }
+}
+
 // Manual savings goals: user-created targets (e.g. a car) funded by explicit
 // contributions. Independent of paycheque logging; persisted under its own key
 // and included in backups.
@@ -751,7 +841,10 @@ function buildBucketsSection(){
         </div>
         <div class="channel" style="padding-top:0;">
           <div class="ch-top"><div class="ch-name" id="stdPayLabel">Standard pay per period</div>
-            <input class="ch-amt" id="setStdPay" type="number" step="10" style="width:110px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--amber);text-align:right;padding:6px 8px;">
+            <span style="display:flex;align-items:center;gap:8px;">
+              <span id="stdPaySaved" style="display:none;color:var(--teal);font-size:12px;white-space:nowrap;">Saved ✓</span>
+              <input class="ch-amt" id="setStdPay" type="number" step="10" min="0" style="width:110px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;color:var(--amber);text-align:right;padding:6px 8px;">
+            </span>
           </div>
         </div>
         <div id="targetInputs"></div>
@@ -762,8 +855,10 @@ function buildBucketsSection(){
 
       <div class="card">
         <p class="card-title">This pay period<span class="info" tabindex="0" role="button" aria-label="Enter the amount you received this pay cycle, after taxes and all other deductions.">i<span class="info-pop">Enter the amount you received this pay cycle, after taxes and all other deductions — your actual take-home, not your gross.</span></span></p>
-        <div class="pay-input"><span>$</span><input type="number" id="payAmt" placeholder="1024.00" step="0.01" min="0"></div>
+        <p class="card-note" id="stdPayLine" style="margin:0 0 10px;"></p>
+        <div class="pay-input"><span>$</span><input type="number" id="payAmt" step="0.01" min="0"></div>
         <p class="card-note" style="margin-top:10px;" id="payNote"></p>
+        <div id="payRecalcPrompt" style="display:none;margin-top:10px;"></div>
         <div id="payFixedSummary"></div>
       </div>
 
@@ -805,10 +900,8 @@ function buildBucketsSection(){
 
   document.querySelectorAll('.freq-btn').forEach(b => b.addEventListener('click', () => setFrequency(b.dataset.freq)));
   document.getElementById('recalcBtn').addEventListener('click', recalculate);
-  document.getElementById('setStdPay').addEventListener('input', e => {
-    standardPay = parseFloat(e.target.value) || standardPay;
-    updatePayNote();
-  });
+  document.getElementById('setStdPay').addEventListener('input', e => onStdPayInput(e.target.value, {persist:false}));
+  document.getElementById('setStdPay').addEventListener('change', e => onStdPayInput(e.target.value, {persist:true}));
   document.getElementById('payAmt').addEventListener('input', updateBucketValues);
 
   document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -853,18 +946,23 @@ function buildBucketsSection(){
   });
 
   document.getElementById('resetBtn').addEventListener('click', () => {
+    // Reset buckets only. Keep the user's saved standard pay and frequency.
     channels = JSON.parse(JSON.stringify(DEFAULTS));
-    standardPay = 1024;
-    setFrequency('weekly');
-    document.getElementById('setStdPay').value = standardPay;
+    document.getElementById('setStdPay').value = standardPay > 0 ? standardPay : '';
     renderTargetInputs();
     renderBuckets();
+    setPayAmtPlaceholder();
+    updateStdPayLine();
+    updateRecalcPrompt();
   });
 
   setFrequency(frequency);
-  document.getElementById('setStdPay').value = standardPay;
+  document.getElementById('setStdPay').value = standardPay > 0 ? standardPay : '';
   renderTargetInputs();
   renderBuckets();
+  setPayAmtPlaceholder();
+  updateStdPayLine();
+  updateRecalcPrompt();
 
   renderSavingsGoals();
   const addGoalBtn = document.getElementById('addGoalBtn');
@@ -1069,6 +1167,8 @@ function buildAccountsSection(){
       savingsGoals = Array.isArray(backup.savingsGoals) ? backup.savingsGoals : savingsGoals;
       MONTHS = backup.months || MONTHS;
       TXNS = backup.transactions || TXNS;
+
+      await migrateOwnTransferCategory();
 
       await window.storage.set('pct-router-config', JSON.stringify(channels));
       await window.storage.set('pct-router-standardpay', String(standardPay));
@@ -1502,6 +1602,9 @@ function categorizeTxn(desc, debit, credit){
   if (d.includes('ICICI')) return 'ICICI (excluded)';
   if (personalRules.employers.some(n=>n && d.includes(n))) return 'Paycheque';
   if (d.includes('TAX REFUND') || d.includes('IMPÔT')) return 'Tax refund';
+  // Uber rides and Uber Eats are deliberately NOT split: CIBC exports truncate
+  // the descriptor (e.g. "UBER CANADA/UBE"), so food and transport can't be told
+  // apart. Kept as a single Uber category until an export distinguishes them.
   if (d.includes('UBER')) return 'Uber';
   if (d.includes('FIT4LESS') || d.includes('GOODLIFE')) return 'Subscriptions';
   if (d.includes('APPLE.COM')) return 'Subscriptions';
@@ -1517,9 +1620,13 @@ function categorizeTxn(desc, debit, credit){
   if (d.includes('CANNABIS')||d.includes('CANNA CABANA')||d.includes('LCBO')||d.includes('TAVERN')||d.includes('SCOOPS')||d.includes('CINEMAS')||d.includes('OXYGE')) return 'Discretionary (dining/leisure)';
   if (d.includes('REMITLY')) return 'Remitly (excluded)';
   if (d.includes('CPA PROF CORP')) return 'CPA fee';
-  if (d.includes('ESSO')||d.includes('CIRCLE K')||d.includes('PETRO-CANADA')||d.includes('SHELL')) return 'Gas station';
+  // Groceries — checked BEFORE gas so a warehouse fuel purchase isn't read as gas.
+  // Costco stays Groceries even for its gas bar, because CIBC descriptions don't
+  // reliably separate Costco gas from Costco groceries.
+  if (d.includes('NO FRILLS')||d.includes('NOFRILLS')||d.includes('FRESHCO')||d.includes('FOOD BASICS')||d.includes('ZEHRS')||d.includes('SOBEYS')||d.includes('METRO')||d.includes('LOBLAWS')||d.includes('REAL CANADIAN SUPERSTORE')||d.includes('SUPERSTORE')||d.includes('WALMART')||d.includes('COSTCO')||d.includes('FARM BOY')||d.includes('FARMBOY')||d.includes('T&T')||d.includes('FORTINOS')||d.includes('VALU-MART')||d.includes('VALU MART')||d.includes('VALUMART')||d.includes('LONGOS')||d.includes("LONGO'S")||d.includes('GIANT TIGER')) return 'Groceries';
+  if (d.includes('ESSO')||d.includes('CIRCLE K')||d.includes('PETRO-CANADA')||d.includes('PETRO CANADA')||d.includes('SHELL')||d.includes('PIONEER')||d.includes('MOBIL')||d.includes('ULTRAMAR')||d.includes('HUSKY')||d.includes('CANADIAN TIRE GAS')||d.includes('CDN TIRE GAS')) return 'Gas station';
   if (d.includes('TEMU')) return 'Online retail';
-  if (isTransferish && who && personalRules.selfNames.some(n=>n && who.includes(n))) return 'Own-name transfer (excluded)';
+  if (isTransferish && who && personalRules.selfNames.some(n=>n && who.includes(n))) return 'Transfer to/from my accounts';
   if (isTransferish) return 'Unclassified transfers';
   return 'Other/uncategorized';
 }
@@ -1585,12 +1692,59 @@ function applyLearnedRules(){
 
 const CAT_GROUPS = {
   netRent: ['Rent (to landlord)','Roommate reimbursement'],
-  uber: ['Uber'], insurance: ['Insurance'], utilities: ['Utilities'],
+  uber: ['Uber'], groceries: ['Groceries'], insurance: ['Insurance'], utilities: ['Utilities'],
   subs: ['Subscriptions'], bnpl: ['BNPL'], cc: ['Credit card payment'],
   fees: ['Bank fees','ATM/fees'], discretionary: ['Discretionary (dining/leisure)','Gas station'],
   otherUncat: ['Other/uncategorized','CPA fee'], blindSpot: ['Unclassified transfers'],
+  ownTransfers: ['Transfer to/from my accounts'],
   income: ['Paycheque','Tax refund']
 };
+// Deliberately NOT added to spendKeys or income: transfers between your own
+// accounts are neither spending nor income, so they stay out of those totals to
+// avoid double-counting. They surface in their own Overview card instead.
+
+// Every category categorizeTxn can emit, plus the display-only ones. Used so the
+// per-transaction category picker always offers them — even a category that no
+// current transaction uses yet (e.g. moving one into "Transfer to/from my
+// accounts" by hand, or tagging the first Groceries purchase).
+const KNOWN_CATEGORIES = [
+  'Rent (to landlord)','Roommate reimbursement','Paycheque','Tax refund',
+  'Groceries','Uber','Subscriptions','Insurance','Utilities',
+  'Credit card payment','BNPL','ATM/fees','Bank fees',
+  'Discretionary (dining/leisure)','Gas station','Online retail','CPA fee',
+  'Transfer to/from my accounts','Unclassified transfers',
+  'ICICI (excluded)','Remitly (excluded)','Other/uncategorized'
+];
+const OWN_TRANSFER_CAT = 'Transfer to/from my accounts';
+const LEGACY_OWN_TRANSFER_CAT = 'Own-name transfer (excluded)';
+
+// One-time migration: rename the old excluded self-transfer category to the new
+// visible one across transactions, per-transaction overrides and learned rules,
+// then persist so it only does real work once. A no-op (no writes) once nothing
+// carries the legacy label.
+async function migrateOwnTransferCategory(){
+  let changed = false;
+  MONTHS.forEach(m => (TXNS[m]||[]).forEach(t => {
+    if (t.category === LEGACY_OWN_TRANSFER_CAT){ t.category = OWN_TRANSFER_CAT; changed = true; }
+  }));
+  Object.keys(overrides).forEach(id => {
+    if (overrides[id] && overrides[id].category === LEGACY_OWN_TRANSFER_CAT){
+      overrides[id].category = OWN_TRANSFER_CAT; changed = true;
+    }
+  });
+  Object.keys(learnedRules).forEach(sig => {
+    if (learnedRules[sig] === LEGACY_OWN_TRANSFER_CAT){ learnedRules[sig] = OWN_TRANSFER_CAT; changed = true; }
+  });
+  if (!changed) return;
+  MONTHS.forEach(m => recomputeMonthCategoryNet(m));
+  const flat = Object.values(TXNS).flat();
+  try{
+    await window.storage.set('dashboard-uploaded-all', JSON.stringify(flat));
+    await window.storage.set('dashboard-uploaded-txns', JSON.stringify(flat));
+    await saveOverrides();
+    await saveLearnedRules();
+  }catch(e){ console.error('own-transfer migration persist failed', e); }
+}
 function sumCat(monthObj, names){ let v=0; names.forEach(n=>{ if(monthObj[n]!==undefined) v+=monthObj[n]; }); return v; }
 function groupTotals(monthObj){
   const g = {};
@@ -1598,9 +1752,10 @@ function groupTotals(monthObj){
   g.income = -g.income;
   return g;
 }
-const spendKeys = ['netRent','uber','insurance','utilities','subs','bnpl','cc','fees','discretionary','otherUncat','blindSpot'];
+const spendKeys = ['netRent','uber','groceries','insurance','utilities','subs','bnpl','cc','fees','discretionary','otherUncat','blindSpot'];
 const catSeriesDef = [
   {key:'netRent', label:'Net rent', color:'#5C7A99'}, {key:'uber', label:'Uber', color:'#D9713A'},
+  {key:'groceries', label:'Groceries', color:'#3FA7A0'},
   {key:'insurance', label:'Insurance', color:'#9B7B93'}, {key:'utilities', label:'Utilities', color:'#6B8F63'},
   {key:'subs', label:'Subscriptions', color:'#B98089'}, {key:'bnpl', label:'BNPL', color:'#C1553B'},
   {key:'cc', label:'Credit card pmt', color:'#8C8171'}, {key:'fees', label:'Fees', color:'#8A6D3B'},
@@ -1674,10 +1829,21 @@ function mergeTxnsIntoState(records, dedupe){
 function parseCsvText(text, accountName){
   const parsed = Papa.parse(text.trim(), { skipEmptyLines:true });
   const records = [];
+  const skippedSamples = [];
+  let skippedCount = 0;
+  // Per-file occurrence counter: two genuinely identical purchases on the same
+  // day hash to the same base id, so the second would be treated as a duplicate.
+  // Suffix repeats within THIS file (#2, #3, …) so real repeats survive, while
+  // the first occurrence keeps the bare id — so re-uploading the same file still
+  // dedupes against already-stored (unsuffixed) transactions.
+  const seen = {};
   parsed.data.forEach(row => {
-    if (row.length < 4) return;
     const date = (row[0]||'').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    if (row.length < 4 || !/^\d{4}-\d{2}-\d{2}$/.test(date)){
+      skippedCount++;
+      if (skippedSamples.length < 3) skippedSamples.push(row.join(', ').slice(0,120));
+      return;
+    }
     const desc = (row[1]||'').trim();
     const debit = parseFloat(row[2]) || 0;
     const credit = parseFloat(row[3]) || 0;
@@ -1685,9 +1851,12 @@ function parseCsvText(text, accountName){
     const amount = Math.round((debit - credit) * 100) / 100;
     const cleaned = cleanDesc(desc);
     const account = accountName || 'Unknown account';
-    records.push({ date, month: date.slice(0,7), desc: cleaned, category, amount, account, id: txnHash(date, cleaned, amount, account) });
+    const baseId = txnHash(date, cleaned, amount, account);
+    const n = (seen[baseId] = (seen[baseId] || 0) + 1);
+    const id = n === 1 ? baseId : baseId + '#' + n;
+    records.push({ date, month: date.slice(0,7), desc: cleaned, category, amount, account, id });
   });
-  return records;
+  return { records, skippedCount, skippedSamples };
 }
 
 function destroyCharts(){
@@ -1702,6 +1871,12 @@ function buildOverview(){
   ov.innerHTML = `
     <div class="kpi-row" id="kpiRow"></div>
     <div class="card"><h2>Income vs total spend, by month</h2><div class="chart-box"><canvas id="incomeChart"></canvas></div></div>
+
+    <div class="card" id="ownTransfersCard" style="display:none;">
+      <h2>Money moved to my accounts</h2>
+      <p class="card-note">Transfers between your own accounts — not spending and not income, so they're kept out of those totals. This is just how much moved, and where.</p>
+      <div id="ownTransfersBody"></div>
+    </div>
 
     <div class="card">
       <div class="card-header">
@@ -1772,6 +1947,66 @@ function refreshOverviewContents(){
   const tableRows = catSeriesDef.map(s => [s.label, allTotals[s.key]]);
   document.getElementById('catTableBody').innerHTML = tableRows.sort((a,b)=>b[1]-a[1])
     .map(([name,t]) => `<tr><td>${name}</td><td class="num">${fmt(t)}</td><td class="num">${fmt(t/N_MONTHS)}</td></tr>`).join('');
+
+  renderOwnTransfers();
+}
+
+// "Money moved to my accounts" — summarises transactions categorised as
+// OWN_TRANSFER_CAT (respecting manual overrides). amount = debit − credit, so a
+// positive amount is money OUT to another of your accounts and a negative one is
+// money IN from it. Shows a per-month out/in/net table and a per-recipient
+// breakdown. The card hides itself when there are no such transactions.
+function renderOwnTransfers(){
+  const card = document.getElementById('ownTransfersCard');
+  const body = document.getElementById('ownTransfersBody');
+  if (!card || !body) return;
+
+  const byMonth = {};
+  const byWho = {};
+  let any = false;
+  MONTHS.forEach(m => {
+    (TXNS[m]||[]).forEach(t => {
+      if (getDisplayCategory(t) !== OWN_TRANSFER_CAT) return;
+      any = true;
+      const out = t.amount > 0 ? t.amount : 0;
+      const inn = t.amount < 0 ? -t.amount : 0;
+      if (!byMonth[m]) byMonth[m] = { out:0, in:0 };
+      byMonth[m].out += out; byMonth[m].in += inn;
+      const whoRaw = extractWho(t.desc);
+      const who = whoRaw && whoRaw.trim() ? whoRaw.trim() : (t.desc || 'Unlabelled');
+      if (!byWho[who]) byWho[who] = { out:0, in:0, count:0 };
+      byWho[who].out += out; byWho[who].in += inn; byWho[who].count++;
+    });
+  });
+
+  if (!any){ card.style.display = 'none'; body.innerHTML = ''; return; }
+  card.style.display = '';
+
+  const monthRows = MONTHS.filter(m => byMonth[m]).map(m => {
+    const r = byMonth[m];
+    const net = r.out - r.in;
+    return `<tr><td>${monthLabel(m)}</td><td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td><td class="num">${(net>=0?'+':'')}${fmt(net)}</td></tr>`;
+  }).join('');
+
+  const whoRows = Object.entries(byWho)
+    .sort((a,b) => (b[1].out+b[1].in) - (a[1].out+a[1].in))
+    .map(([who, r]) => `<tr><td>${escapeHtml(who)}</td><td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td><td class="num">${r.count}</td></tr>`)
+    .join('');
+
+  body.innerHTML = `
+    <div class="txn-table-wrap" style="margin-top:12px;">
+      <table>
+        <thead><tr><th>Month</th><th class="num">Out</th><th class="num">In</th><th class="num">Net (out − in)</th></tr></thead>
+        <tbody>${monthRows}</tbody>
+      </table>
+    </div>
+    <h2 style="font-size:16px;margin:18px 0 0;">By destination / recipient</h2>
+    <div class="txn-table-wrap" style="margin-top:10px;">
+      <table>
+        <thead><tr><th>Recipient</th><th class="num">Out</th><th class="num">In</th><th class="num">Count</th></tr></thead>
+        <tbody>${whoRows}</tbody>
+      </table>
+    </div>`;
 }
 
 function wireCsvUpload(container, accountName){
@@ -1793,21 +2028,33 @@ function wireCsvUpload(container, accountName){
       const text = reader.result;
       const existingIds = new Set();
       MONTHS.forEach(m => TXNS[m].forEach(t => existingIds.add(t.id)));
-      const records = parseCsvText(text, accountName);
+      const { records, skippedCount, skippedSamples } = parseCsvText(text, accountName);
+
+      const skippedNote = skippedCount > 0
+        ? `<div class="kpi-sub" style="margin-top:8px;color:var(--amber);">${skippedCount} row${skippedCount>1?'s':''} couldn't be read (unrecognised format).${skippedSamples.length ? ' First: ' + skippedSamples.map(s=>escapeHtml(s)).join(' · ') : ''}</div>`
+        : '';
+
+      // Nothing parsed at all — the file's format isn't one we understand yet.
+      if (!records.length){
+        previewArea.innerHTML = `<div class="status-msg">Couldn't read any transactions from this ${escapeHtml(accountName)} file — its format isn't supported yet.${skippedCount ? ` ${skippedCount} row${skippedCount>1?'s were':' was'} in an unrecognised format.` : ''}${skippedSamples.length ? '<br>First: ' + escapeHtml(skippedSamples[0]) : ''}</div>`;
+        return;
+      }
+
       const newOnes = records.filter(r => !existingIds.has(r.id));
       const dupCount = records.length - newOnes.length;
       pendingRecords = newOnes;
 
       if (!newOnes.length){
-        previewArea.innerHTML = `<div class="status-msg">Parsed ${records.length} rows from ${accountName}, all ${dupCount} already in the dashboard — nothing new to add.</div>`;
+        previewArea.innerHTML = `<div class="status-msg">Parsed ${records.length} rows from ${escapeHtml(accountName)}, all ${dupCount} already in the dashboard — nothing new to add.${skippedNote}</div>`;
         return;
       }
       const dates = newOnes.map(r=>r.date).sort();
       previewArea.innerHTML = `
         <div class="preview-summary">
           <div>
-            <div><span class="stat">${newOnes.length}</span> new transactions from <span class="stat">${accountName}</span>${dupCount ? ` (${dupCount} duplicates skipped)` : ''}</div>
+            <div><span class="stat">${newOnes.length}</span> new transactions from <span class="stat">${escapeHtml(accountName)}</span>${dupCount ? ` (${dupCount} duplicates skipped)` : ''}</div>
             <div class="kpi-sub">${dates[0]} → ${dates[dates.length-1]}</div>
+            ${skippedNote}
           </div>
           <div style="display:flex;gap:10px;">
             <button class="ghost-btn" id="cancelMergeBtn">Cancel</button>
@@ -1852,7 +2099,11 @@ function renderMonthDetail(m){
   if (!container || !TXNS[m]) return;
   if (chartInstances['m-'+m]) { chartInstances['m-'+m].destroy(); delete chartInstances['m-'+m]; }
 
-  const allCategories = Array.from(new Set(Object.values(TXNS).flat().map(t => t.category))).sort();
+  const allCategories = Array.from(new Set([
+    ...KNOWN_CATEGORIES,
+    ...Object.values(TXNS).flat().map(t => t.category),
+    ...Object.values(overrides).map(o => o && o.category).filter(Boolean)
+  ])).sort();
   const g = groupTotals(CATNET[m]);
   const spend = spendKeys.reduce((a,k)=>a+g[k],0);
   const net = g.income - spend;
@@ -2103,6 +2354,7 @@ async function init(){
   await loadAccountChangeLog();
   await loadPersonalRules();
   await loadSavingsGoals();
+  await migrateOwnTransferCategory();
   applyLearnedRules();
   rebuildAll();
 }
