@@ -11,7 +11,7 @@ first load.
 
 - Live: https://jaxki97.github.io/money-hq/
 - Repo: https://github.com/Jaxki97/money-hq (public, GitHub Pages: main/root)
-- Current build: `v9` (`window.APP_BUILD` in index.html, `CACHE_NAME` in sw.js —
+- Current build: `v10` (`window.APP_BUILD` in index.html, `CACHE_NAME` in sw.js —
   **keep these in sync**).
 - User's main device: Mac mini, Safari "Add to Dock" web app. A separate
   "training log" app (repo `Jaxki97/My-Training-Log`) lives on their phone and
@@ -66,7 +66,38 @@ sole copy) and in backup JSON the user keeps locally.
    renders an error card (showing build version, Chart-loaded status, stack)
    instead of silently refusing to open.
 
-## Features added (all shipped)
+## v10 changes (shipped)
+
+- **Own-account transfers are visible, not hidden.** The old `Own-name transfer
+  (excluded)` category is renamed `Transfer to/from my accounts` (constant
+  `OWN_TRANSFER_CAT`) with a `CAT_GROUPS.ownTransfers` group kept OUT of
+  `spendKeys` and `income` (never double-counted). Overview has a "Money moved to
+  my accounts" card (per-month out/in/net + per-recipient breakdown). A one-time
+  load/restore migration (`migrateOwnTransferCategory`) rewrites stored txns,
+  overrides and learned rules from the legacy label; it's a no-op once nothing
+  carries it. `KNOWN_CATEGORIES` makes every category pickable by hand even when
+  no txn uses it yet.
+- **Standard pay persists on edit.** `pct-router-standardpay` is written on every
+  edit (debounced on input, immediate on change) via `onStdPayInput`, not only on
+  log. `#payAmt` placeholder + bucket $ amounts derive from standard pay
+  (`updateBucketValues` falls back to it as the basis when the pay field is
+  empty). "This pay period" has an editable `Standard pay: $X · edit` line; a
+  non-destructive "Recalculate percentages from targets?" prompt shows only when a
+  real target's implied % drifts. Reset to defaults resets buckets only, keeps pay.
+- **CSV import.** `Groceries` category (Ontario grocers) checked BEFORE gas so
+  warehouse fuel isn't misread; Costco stays Groceries even for its gas bar. More
+  gas keywords. Uber stays one category (CIBC truncates ride vs Eats — see code
+  comment). `parseCsvText` gives genuine same-day duplicates a per-file `#2`/`#3`
+  id suffix (first occurrence keeps the bare id so re-uploads still dedupe), and
+  returns `{records, skippedCount, skippedSamples}` so the upload preview reports
+  unreadable rows instead of dropping them silently.
+- **Note on restore + the test harness:** a browser-pane *synthetic* file-input
+  `change` event migrates the data correctly but does NOT complete the post-restore
+  `rebuildAll()` auto-switch to Overview — pristine v9 behaves identically, so it's
+  a harness artifact of the synthetic event, not a bug. Real native file-pick
+  restore rebuilds fine.
+
+## Features added earlier (all shipped)
 
 - Buckets: expand/collapse chevron; fixed-vs-flexible summary in the "This pay
   period" card; take-home field renamed (dropped ", net amount") with an "i"
